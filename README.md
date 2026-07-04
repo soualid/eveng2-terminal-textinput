@@ -55,7 +55,7 @@ other way around).
 ## Install & run
 
 ```sh
-git clone <repo> eveng2-terminal-textinput
+git clone https://github.com/soualid/eveng2-terminal-textinput.git
 cd eveng2-terminal-textinput
 npm start
 ```
