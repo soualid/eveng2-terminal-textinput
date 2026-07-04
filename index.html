@@ -183,6 +183,7 @@ function showSession(id, title) {
   setChip('idle')
   curAssistant = null
   thinkingEl = null   // transcript was cleared with innerHTML above
+  stick = true        // always land at the bottom when joining a session
   if (id) attach(id)
   $('input').focus()
 }
@@ -258,10 +259,15 @@ function shortPath(p) { return (p || '').replace(/^\/Users\/[^/]+/, '~') }
 function esc(t) { const d = document.createElement('div'); d.textContent = String(t ?? ''); return d.innerHTML }
 
 // ---------- transcript ----------
-function scrollDown() {
+// Stick-to-bottom: on when a session opens, off as soon as the user scrolls
+// up, back on when they return to the bottom.
+let stick = true
+$('main').addEventListener('scroll', () => {
   const m = $('main')
-  const nearBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 160
-  if (nearBottom) m.scrollTop = m.scrollHeight
+  stick = m.scrollHeight - m.scrollTop - m.clientHeight < 60
+})
+function scrollDown() {
+  if (stick) $('main').scrollTop = $('main').scrollHeight
 }
 function addEl(el) { $('transcript').appendChild(el); scrollDown(); return el }
 function bubble(cls, text) {
