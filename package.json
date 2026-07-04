@@ -1,0 +1,26 @@
+{
+  "name": "eveng2-terminal-textinput",
+  "version": "0.1.0",
+  "description": "Typed text input for Even Terminal (Even Realities G2 smart glasses) — local web companion, zero dependencies",
+  "type": "module",
+  "main": "server.mjs",
+  "bin": {
+    "eveng2-terminal-textinput": "server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "even-realities",
+    "even-g2",
+    "even-terminal",
+    "claude-code",
+    "smart-glasses",
+    "companion"
+  ],
+  "author": "Simon Oualid <simon.oualid@gmail.com>",
+  "license": "MIT"
+}
