@@ -141,6 +141,7 @@ const post = (path, body) => api(path, {
 
 let instances = []           // live even-terminal instances
 let instPort = Number(localStorage.getItem('instPort')) || null
+let view = null              // 'list' | 'session'
 let current = null           // open sessionId (null = list view)
 let es = null                // EventSource
 let curAssistant = null      // assistant bubble currently streaming
@@ -149,6 +150,7 @@ let pendingCwd = null        // cwd of a new session awaiting its id
 
 // ---------- header / navigation ----------
 function showList() {
+  view = 'list'
   current = null
   if (es) { es.close(); es = null }
   $('transcript').style.display = 'none'
@@ -161,10 +163,12 @@ function showList() {
   $('hTitle').textContent = 'Even Terminal — text input'
   $('hSub').style.display = 'none'
   $('instSel').style.display = ''
+  if (instPort) setHash(`#/${instPort}`)
   loadSessions()
 }
 
 function showSession(id, title) {
+  view = 'session'
   current = id                       // null for a session not created yet
   $('sessionList').style.display = 'none'
   $('transcript').style.display = ''
@@ -184,7 +188,10 @@ function showSession(id, title) {
   curAssistant = null
   thinkingEl = null   // transcript was cleared with innerHTML above
   stick = true        // always land at the bottom when joining a session
-  if (id) attach(id)
+  if (id) {
+    setHash(`#/${instPort}/${id}${title ? '/' + slug(title) : ''}`)
+    attach(id)
+  }
   $('input').focus()
 }
 
@@ -257,6 +264,39 @@ function relTime(d) {
 }
 function shortPath(p) { return (p || '').replace(/^\/Users\/[^/]+/, '~') }
 function esc(t) { const d = document.createElement('div'); d.textContent = String(t ?? ''); return d.innerHTML }
+
+// ---------- routing ----------
+// Speaking URLs: #/<port> (session list) and #/<port>/<sessionId>/<title-slug>
+// so a refresh (or a shared link) lands back on the same view.
+function slug(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+}
+function deslug(s) {
+  const t = String(s || '').replace(/-/g, ' ').trim()
+  return t ? t[0].toUpperCase() + t.slice(1) : ''
+}
+function setHash(h) {
+  if (location.hash !== h) location.hash = h
+}
+function route() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean)
+  const port = Number(parts[0]) || null
+  const id = parts[1] || null
+  if (port && port !== instPort && instances.find((i) => i.port === port)) {
+    instPort = port
+    localStorage.setItem('instPort', port)
+    $('instSel').value = String(port)
+  }
+  if (id) {
+    if (current === id) return           // already showing it (e.g. slug added)
+    showSession(id, parts[2] ? deslug(parts[2]) : null)
+  } else {
+    if (view === 'list' && port === instPort) return
+    showList()
+  }
+}
+window.addEventListener('hashchange', route)
 
 // ---------- transcript ----------
 // Stick-to-bottom: on when a session opens, off as soon as the user scrolls
@@ -388,7 +428,12 @@ function handle(m) {
       addEl(r)
       setChip('idle')
       // first reply of a brand-new session: grab its id
-      if (!current && m.sessionId) { current = m.sessionId; $('hSub').textContent = current.slice(0, 8) }
+      if (!current && m.sessionId) {
+        current = m.sessionId
+        $('hSub').textContent = current.slice(0, 8)
+        // replaceState: update the URL without retriggering route()
+        history.replaceState(null, '', `#/${instPort}/${current}`)
+      }
       break
     }
     case 'error': infoLine('error: ' + m.message, 'err'); break
@@ -466,6 +511,7 @@ async function send() {
     if (!current && r.sessionId) {
       current = r.sessionId
       $('hSub').textContent = current.slice(0, 8)
+      history.replaceState(null, '', `#/${instPort}/${current}`)
       openStream(current)   // SSE replay will replay user_prompt
     } else if (!es) {
       openStream(current)
@@ -501,7 +547,7 @@ $('stopBtn').onclick = () => current && post('/api/interrupt', { sessionId: curr
   .catch((e) => infoLine('failed: ' + e.message, 'err'))
 
 // ---------- boot ----------
-loadInstances().then(showList)
+loadInstances().then(route)   // restore the view encoded in the URL hash
 </script>
 </body>
 </html>
