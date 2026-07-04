@@ -64,6 +64,8 @@
   .bubble.dim { opacity: .55; }
   .line { color: var(--dim); font-size: 12.5px; padding: 0 4px; word-break: break-word; }
   .line.err { color: var(--red); }
+  .line.thinking { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
   .tool { font-size: 12.5px; color: var(--dim); background: var(--panel); border: 1px solid var(--border);
           border-radius: 8px; padding: 6px 10px; align-self: flex-start; max-width: 92%; cursor: pointer; }
   .tool .spin::after { content: "…"; }
@@ -180,6 +182,7 @@ function showSession(id, title) {
     (inst ? ` · :${inst.port}` : '')
   setChip('idle')
   curAssistant = null
+  thinkingEl = null   // transcript was cleared with innerHTML above
   if (id) attach(id)
   $('input').focus()
 }
@@ -300,6 +303,21 @@ function openStream(id) {
 const toolEls = new Map()
 const permCards = []
 
+// Transient "thinking…" indicator: even-terminal only signals think_start /
+// think_end status events (it never streams thinking content), so all we can
+// show is that Claude is reasoning.
+let thinkingEl = null
+function showThinking() {
+  if (thinkingEl) return
+  thinkingEl = document.createElement('div')
+  thinkingEl.className = 'line thinking'
+  thinkingEl.textContent = '🧠 thinking…'
+  addEl(thinkingEl)
+}
+function hideThinking() {
+  if (thinkingEl) { thinkingEl.remove(); thinkingEl = null }
+}
+
 function handle(m) {
   switch (m.type) {
     case 'user_prompt':
@@ -307,12 +325,14 @@ function handle(m) {
       bubble('user', m.text)
       break
     case 'text_delta':
+      hideThinking()
       if (!curAssistant) curAssistant = bubble('assistant', '')
       curAssistant.textContent += m.text
       turnHadText = true
       scrollDown()
       break
     case 'tool_start': {
+      hideThinking()
       curAssistant = null
       const t = document.createElement('div')
       t.className = 'tool'
@@ -345,9 +365,15 @@ function handle(m) {
       infoLine('answer sent: ' + Object.values(m.answers || {}).join(' · '))
       break
     case 'status':
-      if (['busy', 'idle', 'waiting'].includes(m.state)) setChip(m.state)
+      if (m.state === 'think_start') showThinking()
+      else if (m.state === 'think_end') hideThinking()
+      else if (['busy', 'idle', 'waiting'].includes(m.state)) {
+        if (m.state === 'idle') hideThinking()
+        setChip(m.state)
+      }
       break
     case 'result': {
+      hideThinking()
       curAssistant = null
       if (!turnHadText && m.text) bubble('assistant', m.text)
       const r = document.createElement('div')
