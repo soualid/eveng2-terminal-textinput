@@ -60,7 +60,8 @@ cd eveng2-terminal-textinput
 npm start
 ```
 
-Then open one of the printed URLs on your phone (prefer the Tailscale IP).
+The companion listens on **port 8790** by default. Open one of the printed
+URLs on your phone — `http://<your-machine-ip>:8790/` (prefer the Tailscale IP).
 Tip: Safari's "Share → Add to Home Screen" gives you a proper full-screen app.
 
 ## Configuration
