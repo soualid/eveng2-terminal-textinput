@@ -66,6 +66,10 @@
 
   /* ---- session list ---- */
   #sessionList .proj { color: var(--accent); }
+  #sessionList .pre {
+    color: var(--amber); font-size: 12px; margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   #sessionList .row {
     padding: 13px 14px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 10px; cursor: pointer;
@@ -331,13 +335,34 @@ function renderList() {
     const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
     row.innerHTML =
       `<div class="meta"><div class="t"></div>` +
-      `<div class="d"><span class="proj">${esc(s._proj)}</span> · <span class="w"></span></div></div>` +
+      `<div class="d"><span class="proj">${esc(s._proj)}</span> · <span class="w"></span></div>` +
+      (s.status === 'busy' ? `<div class="pre">…</div>` : '') +
+      `</div>` +
       (s.status ? `<span class="chip ${esc(s.status)}">${esc(s.status)}</span>` : '')
     row.querySelector('.t').textContent = s.title || s.id.slice(0, 8)
     row.querySelector('.w').textContent = when
+    if (s.status === 'busy') fillLastLine(s, row.querySelector('.pre'))
     row.onclick = () => { curPort = s._port; showSession(s.id, s.title) }
     box.appendChild(row)
   }
+}
+
+// Preview the latest line of a busy session, from its on-disk history (cheap,
+// works for any instance). Cached by lastModified so the poll only refetches
+// sessions that actually advanced.
+const lineCache = new Map()
+async function fillLastLine(s, el) {
+  const hit = lineCache.get(s.id)
+  if (hit && hit.ts === s.timestamp) { el.textContent = hit.text || '…'; return }
+  try {
+    const r = await fetch(`/api/sessions/${s.id}/history?provider=claude&limit=2&_inst=${s._port}`).then((x) => x.json())
+    const last = (r.history || []).filter((h) => h.text && h.text.trim()).pop()
+    let text = last ? last.text.trim().split('\n').map((l) => l.trim()).filter(Boolean).pop() : ''
+    if (last && last.role === 'user') text = '› ' + text
+    text = text.slice(0, 120)
+    lineCache.set(s.id, { ts: s.timestamp, text })
+    if (el.isConnected) el.textContent = text || '…'
+  } catch { /* keep the placeholder */ }
 }
 
 function relTime(d) {
