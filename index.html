@@ -81,6 +81,7 @@
     padding: 4px 6px; font-size: 18px; line-height: 1;
   }
   .kebab:active { background: var(--border); }
+  .unarch { flex-shrink: 0; font-size: 12px; padding: 6px 10px; color: var(--accent); }
   .menu {
     position: fixed; z-index: 50; background: var(--panel);
     border: 1px solid var(--border); border-radius: 10px; padding: 4px;
@@ -244,16 +245,27 @@ let pollTimer = null
 // done: id -> timestamp at which the user marked it done. Keyed by timestamp
 // so the override auto-expires if the session genuinely advances again.
 let doneMap = JSON.parse(localStorage.getItem('done') || '{}')
-let hidden = new Set(JSON.parse(localStorage.getItem('hidden') || '[]'))
-let showHidden = false
+// Archived conversations: id -> { title, proj, ts } snapshot, so the Archives
+// view can render them even once they drop out of the recent-sessions fetch.
+// Archived sessions never show on the main screen and can't be opened.
+let archived = JSON.parse(localStorage.getItem('archived') || '{}')
+// Migrate the old flat "hidden" set into archives (metadata unknown).
+try {
+  const old = JSON.parse(localStorage.getItem('hidden') || '[]')
+  if (old.length) {
+    for (const id of old) if (!archived[id]) archived[id] = { title: null, proj: null, ts: null }
+    localStorage.removeItem('hidden')
+    localStorage.setItem('archived', JSON.stringify(archived))
+  }
+} catch { /* ignore */ }
 function saveOverrides() {
   localStorage.setItem('done', JSON.stringify(doneMap))
-  localStorage.setItem('hidden', JSON.stringify([...hidden]))
+  localStorage.setItem('archived', JSON.stringify(archived))
 }
 function effStatus(s) {
   return (s.status === 'busy' && doneMap[s.id] === s.timestamp) ? 'idle' : s.status
 }
-let view = null              // 'list' | 'session'
+let view = null              // 'list' | 'session' | 'archived'
 let current = null           // open sessionId (null = list view)
 let es = null                // EventSource
 let curAssistant = null      // assistant bubble currently streaming
@@ -385,7 +397,7 @@ async function loadSessions() {
 
 function busyCount(port) {
   return allSessions.filter((s) =>
-    (port == null || s._port === port) && !hidden.has(s.id) && effStatus(s) === 'busy').length
+    (port == null || s._port === port) && !archived[s.id] && effStatus(s) === 'busy').length
 }
 
 function renderList() {
@@ -408,15 +420,14 @@ function renderList() {
   box.appendChild(bar)
 
   const scoped = scope === 'all' ? allSessions : allSessions.filter((s) => s._port === Number(scope))
-  const rows = scoped.filter((s) => showHidden || !hidden.has(s.id))
+  const rows = scoped.filter((s) => !archived[s.id])
   if (!rows.length) {
     box.insertAdjacentHTML('beforeend', '<div class="empty">No Claude Code sessions found.</div>')
   }
   for (const s of rows) {
     const st = effStatus(s)
-    const isHidden = hidden.has(s.id)
     const row = document.createElement('div')
-    row.className = 'row' + (isHidden ? ' muted' : '')
+    row.className = 'row'
     const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
     row.innerHTML =
       `<div class="meta"><div class="t"></div>` +
@@ -433,21 +444,66 @@ function renderList() {
     box.appendChild(row)
   }
 
-  // Footer: reveal / hide the muted sessions.
-  const nHidden = scoped.filter((s) => hidden.has(s.id)).length
-  if (nHidden) {
+  // Footer: enter the Archives view.
+  const nArch = Object.keys(archived).length
+  if (nArch) {
     const f = document.createElement('div')
     f.className = 'footer'
-    f.textContent = showHidden ? `Hide ${nHidden} hidden session${nHidden > 1 ? 's' : ''}` : `Show ${nHidden} hidden`
-    f.onclick = () => { showHidden = !showHidden; renderList() }
+    f.textContent = `🗄 Archived (${nArch})`
+    f.onclick = showArchived
     box.appendChild(f)
   }
 }
 
-// Tiny per-row action menu: mark a mislabeled session done, or hide it.
+// Archives view: archived conversations across all instances, read-only
+// except for unarchiving. Rendered from the stored snapshot so it works even
+// after a session drops out of the recent-sessions fetch.
+function showArchived() {
+  view = 'archived'
+  current = null
+  if (es) { es.close(); es = null }
+  stopPolling()
+  $('transcript').style.display = 'none'
+  $('sessionList').style.display = ''
+  $('composer').style.display = 'none'
+  $('backBtn').style.display = ''
+  $('stopBtn').style.display = 'none'
+  $('statusChip').style.display = 'none'
+  $('newBtn').style.display = 'none'
+  $('instSel').style.display = 'none'
+  $('hSub').style.display = 'none'
+  $('hTitle').textContent = 'Archives'
+  setHash('#/archived')
+  renderArchived()
+}
+
+function renderArchived() {
+  const box = $('sessionList')
+  box.innerHTML = ''
+  const items = Object.entries(archived)
+    .map(([id, m]) => ({ id, ...m }))
+    .sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0))
+  if (!items.length) {
+    box.innerHTML = '<div class="empty">No archived conversations.</div>'
+    return
+  }
+  for (const it of items) {
+    const row = document.createElement('div')
+    row.className = 'row muted'
+    const when = it.ts ? relTime(new Date(it.ts)) : ''
+    row.innerHTML =
+      `<div class="meta"><div class="t"></div>` +
+      `<div class="d">${it.proj ? `<span class="proj">${esc(it.proj)}</span> · ` : ''}${esc(when)}</div></div>` +
+      `<button class="unarch">Unarchive</button>`
+    row.querySelector('.t').textContent = it.title || it.id.slice(0, 8)
+    row.querySelector('.unarch').onclick = () => { delete archived[it.id]; saveOverrides(); renderArchived() }
+    box.appendChild(row)
+  }
+}
+
+// Tiny per-row action menu: mark a mislabeled session done, or archive it.
 function rowMenu(anchor, s) {
   document.querySelector('.menu')?.remove()
-  const isHidden = hidden.has(s.id)
   const m = document.createElement('div')
   m.className = 'menu'
   const add = (label, fn) => {
@@ -459,8 +515,10 @@ function rowMenu(anchor, s) {
   if (s.status === 'busy' && effStatus(s) === 'busy') {
     add('✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() })
   }
-  if (isHidden) add('◇ Unhide', () => { hidden.delete(s.id); saveOverrides(); renderList() })
-  else add('✕ Hide', () => { hidden.add(s.id); saveOverrides(); renderList() })
+  add('🗄 Archive', () => {
+    archived[s.id] = { title: s.title || null, proj: s._proj || null, ts: s.timestamp || null }
+    saveOverrides(); renderList()
+  })
   const r = anchor.getBoundingClientRect()
   m.style.top = `${r.bottom + 4}px`
   m.style.right = `${window.innerWidth - r.right}px`
@@ -673,7 +731,12 @@ function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean)
   const seg0 = parts[0]
   const id = parts[1] || null
+  if (seg0 === 'archived') {
+    if (view !== 'archived') showArchived()
+    return
+  }
   if (id) {
+    if (archived[id]) { showArchived(); return }   // archived: read-only, no opening
     const p = Number(seg0)
     if (p && instances.find((i) => i.port === p)) curPort = p
     if (current === id) return           // already showing it (e.g. slug added)

@@ -18,6 +18,8 @@ glasses HUD — both see exactly the same sessions.
   tool (even-terminal's API stays text-only)
 - ✅ **Permission and question prompts** answered with buttons, plus an
   interrupt button
+- 🗄 **Archive** conversations to clear them off the main screen; archived
+  ones move to a read-only Archives view where they can only be unarchived
 - 🌐 **Unified view**: one list aggregating the sessions of every running
   `even-terminal` instance, with a per-project pill on each row and a global
   bar of pills showing what's running where at a glance (also acts as a filter);
