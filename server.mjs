@@ -13,10 +13,13 @@
 //          instance when several are running)
 
 import { createServer, request } from 'node:http'
-import { readFileSync, readdirSync } from 'node:fs'
-import { homedir, networkInterfaces } from 'node:os'
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'node:fs'
+import { homedir, networkInterfaces, tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const UPLOAD_DIR = join(tmpdir(), 'eveng2-uploads')
+const MAX_UPLOAD = 16 * 1024 * 1024   // 16 MB
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INSTANCE_DIR = join(homedir(), '.even-terminal', 'instances')
@@ -95,6 +98,43 @@ const server = createServer((req, res) => {
     sendJson(res, 200, findInstances().map((i) => ({
       pid: i.pid, port: i.port, cwd: i.cwd, startedAt: i.startedAt,
     })))
+    return
+  }
+
+  // Receive a screenshot as a data URL, write it to disk, return its absolute
+  // path so the client can reference it in a prompt (Claude Code reads it via
+  // its Read tool). even-terminal's API stays text-only.
+  if (req.method === 'POST' && url === '/companion/upload') {
+    let size = 0
+    const chunks = []
+    req.on('data', (c) => {
+      size += c.length
+      if (size > MAX_UPLOAD) { sendJson(res, 413, { error: 'Image too large (max 16 MB)' }); req.destroy() }
+      else chunks.push(c)
+    })
+    req.on('end', () => {
+      if (res.headersSent) return
+      try {
+        const { dataUrl } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        const m = /^data:image\/(png|jpeg|jpg|webp|gif);base64,(.+)$/s.exec(dataUrl || '')
+        if (!m) { sendJson(res, 400, { error: 'Expected an image data URL' }); return }
+        const ext = m[1] === 'jpeg' ? 'jpg' : m[1]
+        mkdirSync(UPLOAD_DIR, { recursive: true })
+        // Best-effort GC: drop uploads older than a day.
+        try {
+          for (const f of readdirSync(UPLOAD_DIR)) {
+            const p = join(UPLOAD_DIR, f)
+            if (Date.now() - statSync(p).mtimeMs > 86_400_000) unlinkSync(p)
+          }
+        } catch { /* ignore */ }
+        const name = `${Date.now()}-${Math.round(Math.random() * 1e9).toString(36)}.${ext}`
+        const path = join(UPLOAD_DIR, name)
+        writeFileSync(path, Buffer.from(m[2], 'base64'))
+        sendJson(res, 200, { path })
+      } catch (err) {
+        sendJson(res, 400, { error: err.message })
+      }
+    })
     return
   }
 

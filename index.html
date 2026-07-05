@@ -166,6 +166,20 @@
     font: inherit; max-height: 130px; min-height: 40px;
   }
   #composer textarea:focus { outline: none; border-color: var(--accent); }
+  #attachBtn { flex-shrink: 0; padding: 8px 10px; font-size: 18px; line-height: 1; }
+  #attachments {
+    display: none; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
+    padding: 8px 10px 0; background: var(--panel);
+  }
+  .att { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+  .att img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+  .att.up { opacity: .5; }
+  .att.err img { border-color: var(--red); }
+  .att .x {
+    position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
+    padding: 0; border-radius: 50%; font-size: 11px; line-height: 1;
+    background: var(--bg); border: 1px solid var(--border);
+  }
 </style>
 </head>
 <body>
@@ -188,7 +202,10 @@
   <div id="transcript" style="display:none"></div>
 </main>
 
+<div id="attachments"></div>
 <div id="composer">
+  <input id="fileInput" type="file" accept="image/*" multiple hidden>
+  <button id="attachBtn" title="Attach screenshot">📎</button>
   <textarea id="input" rows="1" placeholder="Message Claude… (Ctrl+Enter to send)"></textarea>
   <button id="sendBtn" class="primary">Send</button>
 </div>
@@ -887,12 +904,63 @@ function questionCard(m) {
   addEl(card)
 }
 
+// ---------- attachments ----------
+// Screenshots are uploaded to the companion, which returns an absolute path;
+// we reference those paths in the prompt so Claude Code reads them itself.
+let attachments = []   // { path, thumb, status: 'up'|'done'|'err', name }
+
+function renderAttachments() {
+  const box = $('attachments')
+  box.innerHTML = ''
+  box.style.display = attachments.length ? 'flex' : 'none'
+  attachments.forEach((a, i) => {
+    const el = document.createElement('div')
+    el.className = 'att' + (a.status === 'up' ? ' up' : '') + (a.status === 'err' ? ' err' : '')
+    el.innerHTML = `<img src="${a.thumb}"><button class="x">✕</button>`
+    el.querySelector('.x').onclick = () => { attachments.splice(i, 1); renderAttachments() }
+    box.appendChild(el)
+  })
+}
+
+$('attachBtn').onclick = () => $('fileInput').click()
+$('fileInput').onchange = async (e) => {
+  for (const file of [...e.target.files]) {
+    if (!file.type.startsWith('image/')) continue
+    const thumb = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file) })
+    const a = { path: null, thumb, status: 'up', name: file.name }
+    attachments.push(a)
+    renderAttachments()
+    try {
+      const r = await fetch('/companion/upload', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: thumb }),
+      }).then((x) => x.json())
+      if (r.error) throw new Error(r.error)
+      a.path = r.path; a.status = 'done'
+    } catch (err) {
+      a.status = 'err'; infoLine('upload failed: ' + err.message, 'err')
+    }
+    renderAttachments()
+  }
+  e.target.value = ''   // allow re-picking the same file
+}
+
 // ---------- sending ----------
 async function send() {
-  const text = $('input').value.trim()
-  if (!text) return
+  const typed = $('input').value.trim()
+  const files = attachments.filter((a) => a.status === 'done' && a.path)
+  if (!typed && !files.length) return
+  if (attachments.some((a) => a.status === 'up')) { infoLine('waiting for upload…'); return }
+  let text = typed
+  if (files.length) {
+    const list = files.map((a) => '- ' + a.path).join('\n')
+    text = (typed ? typed + '\n\n' : 'Please look at the attached screenshot(s).\n\n') +
+      'Attached image file(s) — read them:\n' + list
+  }
   $('input').value = ''
   $('input').style.height = 'auto'
+  attachments = []
+  renderAttachments()
   setChip('busy')
   try {
     const body = { text, provider: 'claude' }

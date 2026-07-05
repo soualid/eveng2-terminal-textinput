@@ -13,6 +13,9 @@ glasses HUD — both see exactly the same sessions.
   cost and duration per turn
 - ⌨️ **Text composer** to send a prompt — resume an existing session or create
   a new one in any project directory
+- 📎 **Screenshot input**: attach images from the phone; they're saved locally
+  and referenced by path in the prompt, so Claude Code reads them with its Read
+  tool (even-terminal's API stays text-only)
 - ✅ **Permission and question prompts** answered with buttons, plus an
   interrupt button
 - 🌐 **Unified view**: one list aggregating the sessions of every running
