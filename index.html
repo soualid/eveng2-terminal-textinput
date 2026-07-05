@@ -75,6 +75,28 @@
     display: flex; align-items: center; gap: 10px; cursor: pointer;
   }
   #sessionList .row:active { background: var(--panel); }
+  #sessionList .row.muted { opacity: .4; }
+  .kebab {
+    flex-shrink: 0; border: none; background: none; color: var(--dim);
+    padding: 4px 6px; font-size: 18px; line-height: 1;
+  }
+  .kebab:active { background: var(--border); }
+  .menu {
+    position: fixed; z-index: 50; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; padding: 4px;
+    display: flex; flex-direction: column; min-width: 150px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  }
+  .menu button {
+    text-align: left; border: none; background: none; color: var(--fg);
+    padding: 10px 12px; border-radius: 6px; font-size: 14px;
+  }
+  .menu button:active { background: var(--border); }
+  .footer {
+    padding: 14px; text-align: center; color: var(--accent);
+    font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border);
+  }
+  .footer:active { background: var(--panel); }
   #sessionList .meta { flex: 1; min-width: 0; }
   #sessionList .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #sessionList .d { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -171,6 +193,21 @@ let scope = localStorage.getItem('scope') || 'all'
 let allSessions = []         // aggregated sessions, each tagged with _port/_proj
 let curPort = null           // port of the open session (or new-session target)
 let pollTimer = null
+
+// User overrides for even-terminal's last-line busy heuristic, which can
+// misreport a stalled/interrupted session as busy.
+// done: id -> timestamp at which the user marked it done. Keyed by timestamp
+// so the override auto-expires if the session genuinely advances again.
+let doneMap = JSON.parse(localStorage.getItem('done') || '{}')
+let hidden = new Set(JSON.parse(localStorage.getItem('hidden') || '[]'))
+let showHidden = false
+function saveOverrides() {
+  localStorage.setItem('done', JSON.stringify(doneMap))
+  localStorage.setItem('hidden', JSON.stringify([...hidden]))
+}
+function effStatus(s) {
+  return (s.status === 'busy' && doneMap[s.id] === s.timestamp) ? 'idle' : s.status
+}
 let view = null              // 'list' | 'session'
 let current = null           // open sessionId (null = list view)
 let es = null                // EventSource
@@ -302,7 +339,8 @@ async function loadSessions() {
 }
 
 function busyCount(port) {
-  return allSessions.filter((s) => (port == null || s._port === port) && s.status === 'busy').length
+  return allSessions.filter((s) =>
+    (port == null || s._port === port) && !hidden.has(s.id) && effStatus(s) === 'busy').length
 }
 
 function renderList() {
@@ -324,27 +362,65 @@ function renderList() {
   for (const i of instances) bar.appendChild(mkPill(projName(i), i.port, busyCount(i.port)))
   box.appendChild(bar)
 
-  const rows = scope === 'all' ? allSessions : allSessions.filter((s) => s._port === Number(scope))
+  const scoped = scope === 'all' ? allSessions : allSessions.filter((s) => s._port === Number(scope))
+  const rows = scoped.filter((s) => showHidden || !hidden.has(s.id))
   if (!rows.length) {
     box.insertAdjacentHTML('beforeend', '<div class="empty">No Claude Code sessions found.</div>')
-    return
   }
   for (const s of rows) {
+    const st = effStatus(s)
+    const isHidden = hidden.has(s.id)
     const row = document.createElement('div')
-    row.className = 'row'
+    row.className = 'row' + (isHidden ? ' muted' : '')
     const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
     row.innerHTML =
       `<div class="meta"><div class="t"></div>` +
       `<div class="d"><span class="proj">${esc(s._proj)}</span> · <span class="w"></span></div>` +
-      (s.status === 'busy' ? `<div class="pre">…</div>` : '') +
+      (st === 'busy' ? `<div class="pre">…</div>` : '') +
       `</div>` +
-      (s.status ? `<span class="chip ${esc(s.status)}">${esc(s.status)}</span>` : '')
+      (st ? `<span class="chip ${esc(st)}">${esc(st)}</span>` : '') +
+      `<button class="kebab" title="Actions">⋯</button>`
     row.querySelector('.t').textContent = s.title || s.id.slice(0, 8)
     row.querySelector('.w').textContent = when
-    if (s.status === 'busy') fillLastLine(s, row.querySelector('.pre'))
+    if (st === 'busy') fillLastLine(s, row.querySelector('.pre'))
     row.onclick = () => { curPort = s._port; showSession(s.id, s.title) }
+    row.querySelector('.kebab').onclick = (e) => { e.stopPropagation(); rowMenu(e.currentTarget, s) }
     box.appendChild(row)
   }
+
+  // Footer: reveal / hide the muted sessions.
+  const nHidden = scoped.filter((s) => hidden.has(s.id)).length
+  if (nHidden) {
+    const f = document.createElement('div')
+    f.className = 'footer'
+    f.textContent = showHidden ? `Hide ${nHidden} hidden session${nHidden > 1 ? 's' : ''}` : `Show ${nHidden} hidden`
+    f.onclick = () => { showHidden = !showHidden; renderList() }
+    box.appendChild(f)
+  }
+}
+
+// Tiny per-row action menu: mark a mislabeled session done, or hide it.
+function rowMenu(anchor, s) {
+  document.querySelector('.menu')?.remove()
+  const isHidden = hidden.has(s.id)
+  const m = document.createElement('div')
+  m.className = 'menu'
+  const add = (label, fn) => {
+    const b = document.createElement('button')
+    b.textContent = label
+    b.onclick = (e) => { e.stopPropagation(); m.remove(); fn() }
+    m.appendChild(b)
+  }
+  if (s.status === 'busy' && effStatus(s) === 'busy') {
+    add('✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() })
+  }
+  if (isHidden) add('◇ Unhide', () => { hidden.delete(s.id); saveOverrides(); renderList() })
+  else add('✕ Hide', () => { hidden.add(s.id); saveOverrides(); renderList() })
+  const r = anchor.getBoundingClientRect()
+  m.style.top = `${r.bottom + 4}px`
+  m.style.right = `${window.innerWidth - r.right}px`
+  document.body.appendChild(m)
+  setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }), 0)
 }
 
 // Preview the latest line of a busy session, from its on-disk history (cheap,
