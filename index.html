@@ -922,28 +922,40 @@ function renderAttachments() {
   })
 }
 
+// Upload one image blob/File through the shared attachment flow.
+async function addImageFile(file) {
+  if (!file || !file.type.startsWith('image/')) return
+  const thumb = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file) })
+  const a = { path: null, thumb, status: 'up', name: file.name || 'pasted' }
+  attachments.push(a)
+  renderAttachments()
+  try {
+    const r = await fetch('/companion/upload', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl: thumb }),
+    }).then((x) => x.json())
+    if (r.error) throw new Error(r.error)
+    a.path = r.path; a.status = 'done'
+  } catch (err) {
+    a.status = 'err'; infoLine('upload failed: ' + err.message, 'err')
+  }
+  renderAttachments()
+}
+
 $('attachBtn').onclick = () => $('fileInput').click()
 $('fileInput').onchange = async (e) => {
-  for (const file of [...e.target.files]) {
-    if (!file.type.startsWith('image/')) continue
-    const thumb = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file) })
-    const a = { path: null, thumb, status: 'up', name: file.name }
-    attachments.push(a)
-    renderAttachments()
-    try {
-      const r = await fetch('/companion/upload', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: thumb }),
-      }).then((x) => x.json())
-      if (r.error) throw new Error(r.error)
-      a.path = r.path; a.status = 'done'
-    } catch (err) {
-      a.status = 'err'; infoLine('upload failed: ' + err.message, 'err')
-    }
-    renderAttachments()
-  }
+  for (const file of [...e.target.files]) await addImageFile(file)
   e.target.value = ''   // allow re-picking the same file
 }
+
+// Paste an image straight into the composer (Ctrl/Cmd+V) — only meaningful in
+// a session, and only when the clipboard actually carries an image.
+$('input').addEventListener('paste', (e) => {
+  const imgs = [...(e.clipboardData?.items || [])].filter((it) => it.type.startsWith('image/'))
+  if (!imgs.length) return
+  e.preventDefault()          // don't drop the image's junk text into the field
+  for (const it of imgs) { const f = it.getAsFile(); if (f) addImageFile(f) }
+})
 
 // ---------- sending ----------
 async function send() {
