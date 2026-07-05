@@ -15,8 +15,10 @@ glasses HUD — both see exactly the same sessions.
   a new one in any project directory
 - ✅ **Permission and question prompts** answered with buttons, plus an
   interrupt button
-- 🔀 **Multi-instance**: a header selector to switch between several running
-  `even-terminal` processes (choice is remembered)
+- 🌐 **Unified view**: one list aggregating the sessions of every running
+  `even-terminal` instance, with a per-project pill on each row and a global
+  bar of pills showing what's running where at a glance (also acts as a filter);
+  the header selector still lets you focus a single project
 - 🪶 **Zero dependencies, zero patching**: one Node server file + one HTML
   page; the official app is left untouched
 

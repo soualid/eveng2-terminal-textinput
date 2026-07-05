@@ -45,7 +45,27 @@
 
   main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
+  /* ---- global bar ---- */
+  .gbar {
+    display: flex; gap: 8px; padding: 12px 14px; overflow-x: auto;
+    border-bottom: 1px solid var(--border); -webkit-overflow-scrolling: touch;
+  }
+  .gpill {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    padding: 6px 11px; border-radius: 999px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--dim);
+  }
+  .gpill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .gpill.busy { color: var(--fg); border-color: var(--amber); }
+  .gpill.busy .dot { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .gpill .n {
+    font-size: 11px; font-weight: 600; color: #06262b; background: var(--amber);
+    border-radius: 999px; padding: 0 6px; min-width: 16px; text-align: center;
+  }
+  .gpill.active { border-color: var(--accent); color: var(--fg); box-shadow: inset 0 0 0 1px var(--accent); }
+
   /* ---- session list ---- */
+  #sessionList .proj { color: var(--accent); }
   #sessionList .row {
     padding: 13px 14px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 10px; cursor: pointer;
@@ -140,7 +160,13 @@ const post = (path, body) => api(path, {
 })
 
 let instances = []           // live even-terminal instances
-let instPort = Number(localStorage.getItem('instPort')) || null
+// scope drives the list: 'all' aggregates every instance, or a port number
+// filters to one. Sessions are always fetched from all instances so the
+// global bar reflects everything regardless of the current filter.
+let scope = localStorage.getItem('scope') || 'all'
+let allSessions = []         // aggregated sessions, each tagged with _port/_proj
+let curPort = null           // port of the open session (or new-session target)
+let pollTimer = null
 let view = null              // 'list' | 'session'
 let current = null           // open sessionId (null = list view)
 let es = null                // EventSource
@@ -163,12 +189,15 @@ function showList() {
   $('hTitle').textContent = 'Even Terminal — text input'
   $('hSub').style.display = 'none'
   $('instSel').style.display = ''
-  if (instPort) setHash(`#/${instPort}`)
+  $('instSel').value = scope
+  setHash(`#/${scope}`)
+  startPolling()
   loadSessions()
 }
 
 function showSession(id, title) {
   view = 'session'
+  stopPolling()
   current = id                       // null for a session not created yet
   $('sessionList').style.display = 'none'
   $('transcript').style.display = ''
@@ -189,7 +218,7 @@ function showSession(id, title) {
   thinkingEl = null   // transcript was cleared with innerHTML above
   stick = true        // always land at the bottom when joining a session
   if (id) {
-    setHash(`#/${instPort}/${id}${title ? '/' + slug(title) : ''}`)
+    setHash(`#/${curPort}/${id}${title ? '/' + slug(title) : ''}`)
     attach(id)
   }
   $('input').focus()
@@ -202,56 +231,112 @@ function setChip(state) {
 }
 
 // ---------- instances ----------
+// Active instance = the open session's port in session view, else the scope
+// filter (null when scope is 'all').
 function currentInst() {
-  return instances.find((i) => i.port === instPort) || instances[0] || null
+  const p = view === 'session' ? curPort : (scope === 'all' ? null : Number(scope))
+  return instances.find((i) => i.port === p) || null
+}
+function projName(inst) {
+  return (shortPath(inst.cwd).split('/').pop() || inst.cwd || '?')
 }
 
 async function loadInstances() {
   try {
     instances = await fetch('/companion/instances').then((r) => r.json())
   } catch { instances = [] }
-  if (!instances.find((i) => i.port === instPort)) instPort = instances[0]?.port ?? null
+  // Keep scope valid: fall back to 'all' if the filtered instance vanished.
+  if (scope !== 'all' && !instances.find((i) => i.port === Number(scope))) scope = 'all'
   const sel = $('instSel')
   sel.innerHTML = ''
   if (!instances.length) {
     sel.appendChild(new Option('⚠ even-terminal is not running', ''))
     return
   }
+  sel.appendChild(new Option('🌐 All projects ▾', 'all'))
   for (const i of instances) {
-    const name = shortPath(i.cwd).split('/').pop() || i.cwd
-    sel.appendChild(new Option(`${name} · :${i.port} ▾`, i.port))
+    sel.appendChild(new Option(`${projName(i)} · :${i.port} ▾`, String(i.port)))
   }
-  sel.value = String(instPort)
+  sel.value = scope
 }
 
 $('instSel').onchange = () => {
-  instPort = Number($('instSel').value) || null
-  localStorage.setItem('instPort', instPort ?? '')
+  scope = $('instSel').value || 'all'
+  localStorage.setItem('scope', scope)
   showList()
 }
 
+// Poll the global view so the pill bar stays live while browsing the list.
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(() => {
+    if (view === 'list' && document.visibilityState === 'visible') loadSessions()
+  }, 5000)
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
 // ---------- session list ----------
+// Fetch every instance's sessions in parallel and tag each with its port /
+// project, so both the global bar and the (optionally filtered) list can be
+// built from one aggregated set.
 async function loadSessions() {
   const box = $('sessionList')
-  box.innerHTML = '<div class="empty">loading…</div>'
-  try {
-    const { sessions, error } = await api('/api/sessions?provider=claude&limit=20')
-    if (error) throw new Error(error)
-    if (!sessions.length) { box.innerHTML = '<div class="empty">No Claude Code sessions found.</div>'; return }
-    box.innerHTML = ''
-    for (const s of sessions) {
-      const row = document.createElement('div')
-      row.className = 'row'
-      const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
-      row.innerHTML = `<div class="meta"><div class="t"></div><div class="d"></div></div>` +
-        (s.status ? `<span class="chip ${esc(s.status)}">${esc(s.status)}</span>` : '')
-      row.querySelector('.t').textContent = s.title || s.id.slice(0, 8)
-      row.querySelector('.d').textContent = `${when} · ${shortPath(s.cwd)}`
-      row.onclick = () => showSession(s.id, s.title)
-      box.appendChild(row)
-    }
-  } catch (err) {
-    box.innerHTML = `<div class="empty">Error: ${esc(err.message)}<br><br><button onclick="loadSessions()">retry</button></div>`
+  const firstPaint = !allSessions.length
+  if (firstPaint) box.innerHTML = '<div class="empty">loading…</div>'
+  if (!instances.length) { box.innerHTML = '<div class="empty">⚠ even-terminal is not running.</div>'; return }
+  const per = await Promise.all(instances.map(async (inst) => {
+    try {
+      const r = await fetch(`/api/sessions?provider=claude&limit=20&_inst=${inst.port}`).then((x) => x.json())
+      if (r.error) throw new Error(r.error)
+      return (r.sessions || []).map((s) => ({ ...s, _port: inst.port, _proj: projName(inst) }))
+    } catch { return [] }
+  }))
+  allSessions = per.flat().sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+  if (view === 'list') renderList()
+}
+
+function busyCount(port) {
+  return allSessions.filter((s) => (port == null || s._port === port) && s.status === 'busy').length
+}
+
+function renderList() {
+  const box = $('sessionList')
+  box.innerHTML = ''
+
+  // Global bar: one pill per instance (+ an "All" pill), showing running
+  // counts and doubling as the scope filter.
+  const bar = document.createElement('div')
+  bar.className = 'gbar'
+  const mkPill = (label, key, busy) => {
+    const p = document.createElement('button')
+    p.className = 'gpill' + (String(scope) === String(key) ? ' active' : '') + (busy ? ' busy' : '')
+    p.innerHTML = `<span class="dot"></span>${esc(label)}` + (busy ? `<span class="n">${busy}</span>` : '')
+    p.onclick = () => { scope = String(key); localStorage.setItem('scope', scope); $('instSel').value = scope; showList() }
+    return p
+  }
+  bar.appendChild(mkPill('All', 'all', busyCount(null)))
+  for (const i of instances) bar.appendChild(mkPill(projName(i), i.port, busyCount(i.port)))
+  box.appendChild(bar)
+
+  const rows = scope === 'all' ? allSessions : allSessions.filter((s) => s._port === Number(scope))
+  if (!rows.length) {
+    box.insertAdjacentHTML('beforeend', '<div class="empty">No Claude Code sessions found.</div>')
+    return
+  }
+  for (const s of rows) {
+    const row = document.createElement('div')
+    row.className = 'row'
+    const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
+    row.innerHTML =
+      `<div class="meta"><div class="t"></div>` +
+      `<div class="d"><span class="proj">${esc(s._proj)}</span> · <span class="w"></span></div></div>` +
+      (s.status ? `<span class="chip ${esc(s.status)}">${esc(s.status)}</span>` : '')
+    row.querySelector('.t').textContent = s.title || s.id.slice(0, 8)
+    row.querySelector('.w').textContent = when
+    row.onclick = () => { curPort = s._port; showSession(s.id, s.title) }
+    box.appendChild(row)
   }
 }
 
@@ -281,20 +366,22 @@ function setHash(h) {
 }
 function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean)
-  const port = Number(parts[0]) || null
+  const seg0 = parts[0]
   const id = parts[1] || null
-  if (port && port !== instPort && instances.find((i) => i.port === port)) {
-    instPort = port
-    localStorage.setItem('instPort', port)
-    $('instSel').value = String(port)
-  }
   if (id) {
+    const p = Number(seg0)
+    if (p && instances.find((i) => i.port === p)) curPort = p
     if (current === id) return           // already showing it (e.g. slug added)
     showSession(id, parts[2] ? deslug(parts[2]) : null)
-  } else {
-    if (view === 'list' && port === instPort) return
-    showList()
+    return
   }
+  // list view: seg0 is 'all' or a port
+  const wanted = (!seg0 || seg0 === 'all') ? 'all'
+    : (instances.find((i) => i.port === Number(seg0)) ? String(Number(seg0)) : 'all')
+  if (view === 'list' && wanted === scope) return
+  scope = wanted
+  localStorage.setItem('scope', scope)
+  showList()
 }
 window.addEventListener('hashchange', route)
 
@@ -432,7 +519,7 @@ function handle(m) {
         current = m.sessionId
         $('hSub').textContent = current.slice(0, 8)
         // replaceState: update the URL without retriggering route()
-        history.replaceState(null, '', `#/${instPort}/${current}`)
+        history.replaceState(null, '', `#/${curPort}/${current}`)
       }
       break
     }
@@ -511,7 +598,7 @@ async function send() {
     if (!current && r.sessionId) {
       current = r.sessionId
       $('hSub').textContent = current.slice(0, 8)
-      history.replaceState(null, '', `#/${instPort}/${current}`)
+      history.replaceState(null, '', `#/${curPort}/${current}`)
       openStream(current)   // SSE replay will replay user_prompt
     } else if (!es) {
       openStream(current)
@@ -537,8 +624,10 @@ $('input').addEventListener('keydown', (e) => {
 $('backBtn').onclick = showList
 $('refreshBtn').onclick = () => { loadInstances(); current ? (openStream(current)) : loadSessions() }
 $('newBtn').onclick = () => {
-  const inst = currentInst()
-  pendingCwd = prompt('Project directory?', (inst && inst.cwd) || '') || null
+  const inst = (scope !== 'all' && instances.find((i) => i.port === Number(scope))) || instances[0]
+  if (!inst) return
+  curPort = inst.port
+  pendingCwd = prompt(`Project directory? (${projName(inst)} · :${inst.port})`, inst.cwd || '') || null
   if (pendingCwd === null) return
   showSession(null, 'New session')
 }
