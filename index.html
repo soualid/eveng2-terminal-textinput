@@ -108,6 +108,34 @@
   .bubble.user { background: var(--user); align-self: flex-end; }
   .bubble.assistant { background: var(--panel); align-self: flex-start; }
   .bubble.dim { opacity: .55; }
+
+  /* ---- markdown (assistant bubbles) ---- */
+  .bubble.md { white-space: normal; }
+  .bubble.md p { margin: 6px 0; }
+  .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4, .bubble.md h5, .bubble.md h6 {
+    margin: 10px 0 4px; line-height: 1.3; font-size: 1em; }
+  .bubble.md h1 { font-size: 1.25em; }
+  .bubble.md h2 { font-size: 1.15em; }
+  .bubble.md h3 { font-size: 1.05em; }
+  .bubble.md ul, .bubble.md ol { margin: 6px 0; padding-left: 22px; }
+  .bubble.md li { margin: 3px 0; }
+  .bubble.md code { background: rgba(110, 118, 129, .25); border-radius: 4px; padding: 1px 5px;
+                    font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .bubble.md pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+                   padding: 8px 10px; margin: 6px 0; overflow-x: auto; }
+  .bubble.md pre code { background: none; padding: 0; font-size: 12px; white-space: pre; }
+  .bubble.md blockquote { border-left: 3px solid var(--border); margin: 6px 0; padding: 2px 10px; color: var(--dim); }
+  .bubble.md a { color: var(--accent); }
+  .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  .bubble.md table { border-collapse: collapse; margin: 6px 0; font-size: 13px;
+                     display: block; overflow-x: auto; max-width: 100%; }
+  .bubble.md th, .bubble.md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .bubble.md th { background: var(--bg); }
+  .bubble.md > :first-child { margin-top: 0; }
+  .bubble.md > :last-child { margin-bottom: 0; }
+  .mermaid-box.rendered { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+                          padding: 8px; margin: 6px 0; overflow-x: auto; text-align: center; }
+  .mermaid-box svg { max-width: 100%; height: auto; }
   .line { color: var(--dim); font-size: 12.5px; padding: 0 4px; word-break: break-word; }
   .line.err { color: var(--red); }
   .line.thinking { animation: pulse 1.2s ease-in-out infinite; }
@@ -449,7 +477,166 @@ function relTime(d) {
   return Math.floor(s / 86400) + 'd ago'
 }
 function shortPath(p) { return (p || '').replace(/^\/Users\/[^/]+/, '~') }
-function esc(t) { const d = document.createElement('div'); d.textContent = String(t ?? ''); return d.innerHTML }
+function esc(t) {
+  return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// ---------- markdown ----------
+// Minimal dependency-free renderer: enough of GFM for agent replies
+// (headings, nested lists, fenced code, tables, quotes, links, bold /
+// italic / strike / inline code). Everything goes through esc() first, so
+// no raw model output ever reaches innerHTML. ```mermaid fences render as
+// diagrams once closed — see the mermaid section below.
+function mdInline(s) {
+  const codes = []
+  s = String(s).replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`)
+  s = esc(s)
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  s = s.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+  s = s.replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>')
+  s = s.replace(/\*(\S(?:[^*\n]*\S)?)\*/g, '<em>$1</em>')
+  s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[i])}</code>`)
+}
+
+// items: [{ind, ord, text}] — nesting is driven by leading-space depth.
+function mdList(items) {
+  if (!items.length) return ''
+  const base = items[0].ind
+  let out = items[0].ord ? '<ol>' : '<ul>'
+  let k = 0
+  while (k < items.length) {
+    const it = items[k++]
+    const kids = []
+    while (k < items.length && items[k].ind > base) kids.push(items[k++])
+    out += `<li>${mdInline(it.text)}${mdList(kids)}</li>`
+  }
+  return out + (items[0].ord ? '</ol>' : '</ul>')
+}
+
+function mdRender(src) {
+  const lines = String(src ?? '').split('\n')
+  const LI = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
+  let html = ''
+  let para = []
+  let i = 0
+  const flush = () => {
+    if (para.length) { html += `<p>${para.map(mdInline).join('<br>')}</p>`; para = [] }
+  }
+  while (i < lines.length) {
+    const l = lines[i]
+    const fence = l.match(/^```(\S*)/)
+    if (fence) {                                   // fenced code (maybe still streaming)
+      flush()
+      const buf = []
+      let closed = false
+      i++
+      while (i < lines.length) {
+        if (/^```\s*$/.test(lines[i])) { closed = true; i++; break }
+        buf.push(lines[i++])
+      }
+      const code = buf.join('\n')
+      if (fence[1].toLowerCase() === 'mermaid' && closed) {
+        html += `<div class="mermaid-box" data-mmd="${esc(code)}"><pre><code>${esc(code)}</code></pre></div>`
+      } else {
+        html += `<pre><code>${esc(code)}</code></pre>`
+      }
+      continue
+    }
+    if (/^\s*$/.test(l)) { flush(); i++; continue }
+    const h = l.match(/^(#{1,6})\s+(.*)$/)
+    if (h) { flush(); html += `<h${h[1].length}>${mdInline(h[2])}</h${h[1].length}>`; i++; continue }
+    if (/^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(l)) { flush(); html += '<hr>'; i++; continue }
+    if (/^\s*>/.test(l)) {                         // blockquote (recursive)
+      flush()
+      const q = []
+      while (i < lines.length && /^\s*>/.test(lines[i])) q.push(lines[i++].replace(/^\s*>\s?/, ''))
+      html += `<blockquote>${mdRender(q.join('\n'))}</blockquote>`
+      continue
+    }
+    if (LI.test(l)) {
+      flush()
+      const items = []
+      let m
+      while (i < lines.length && (m = lines[i].match(LI))) {
+        items.push({ ind: m[1].length, ord: /\d/.test(m[2]), text: m[3] })
+        i++
+      }
+      html += mdList(items)
+      continue
+    }
+    const sep = lines[i + 1]
+    if (l.includes('|') && sep && /^[|\s:-]+$/.test(sep) && sep.includes('-') && sep.includes('|')) {
+      flush()
+      const row = (r) => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
+      const cells = (r, tag) => r.map((c) => `<${tag}>${mdInline(c)}</${tag}>`).join('')
+      html += `<table><thead><tr>${cells(row(l), 'th')}</tr></thead><tbody>`
+      i += 2
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
+        html += `<tr>${cells(row(lines[i++]), 'td')}</tr>`
+      }
+      html += '</tbody></table>'
+      continue
+    }
+    para.push(l)
+    i++
+  }
+  flush()
+  return html
+}
+
+// ---------- mermaid ----------
+// Loaded from the CDN only when a diagram actually shows up; offline (or on
+// an invalid diagram) the fenced code block simply stays visible.
+let mermaidP = null
+function loadMermaid() {
+  if (!mermaidP) {
+    mermaidP = new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'
+      s.onload = () => {
+        window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' })
+        resolve(window.mermaid)
+      }
+      s.onerror = () => reject(new Error('mermaid load failed'))
+      document.head.appendChild(s)
+    })
+  }
+  return mermaidP
+}
+
+// svg cache keyed by diagram source: streaming re-renders reset innerHTML on
+// every delta, so already-rendered diagrams must come back instantly (and a
+// null entry pins a diagram that failed, so we never retry in a loop).
+const mmdCache = new Map()
+const mmdPending = new Set()
+let mmdSeq = 0
+function applyMermaidCache() {
+  for (const box of document.querySelectorAll('.mermaid-box:not(.rendered)')) {
+    const svg = mmdCache.get(box.dataset.mmd)
+    if (svg) { box.innerHTML = svg; box.classList.add('rendered') }
+  }
+}
+async function renderMermaid(root) {
+  applyMermaidCache()
+  for (const box of root.querySelectorAll('.mermaid-box:not(.rendered)')) {
+    const code = box.dataset.mmd
+    if (mmdCache.has(code) || mmdPending.has(code)) continue
+    mmdPending.add(code)
+    const id = 'mmd' + (++mmdSeq)
+    try {
+      const mermaid = await loadMermaid()
+      const { svg } = await mermaid.render(id, code)
+      mmdCache.set(code, svg)
+    } catch {
+      mmdCache.set(code, null)
+      document.getElementById('d' + id)?.remove()   // mermaid can leave its scratch node behind
+    }
+    mmdPending.delete(code)
+    applyMermaidCache()
+    scrollDown()
+  }
+}
 
 // ---------- routing ----------
 // Speaking URLs: #/<port> (session list) and #/<port>/<sessionId>/<title-slug>
@@ -504,6 +691,21 @@ function bubble(cls, text) {
   b.textContent = text
   return addEl(b)
 }
+// Assistant bubble rendered as markdown. _raw keeps the source so streaming
+// can append and re-render (renderMd) on every delta.
+function mdBubble(cls, raw) {
+  const b = document.createElement('div')
+  b.className = 'bubble md ' + cls
+  b._raw = String(raw ?? '')
+  addEl(b)
+  renderMd(b)
+  return b
+}
+function renderMd(el) {
+  el.innerHTML = mdRender(el._raw)
+  renderMermaid(el)
+  scrollDown()
+}
 function infoLine(text, cls) {
   const l = document.createElement('div')
   l.className = 'line' + (cls ? ' ' + cls : '')
@@ -519,7 +721,8 @@ async function attach(id) {
     try {
       const { history } = await api(`/api/sessions/${id}/history?provider=claude&limit=10`)
       for (const h of history || []) {
-        bubble((h.role === 'user' ? 'user' : 'assistant') + ' dim', h.text)
+        if (h.role === 'user') bubble('user dim', h.text)
+        else mdBubble('assistant dim', h.text)
       }
       if (history && history.length) infoLine('— history · your next message resumes this session —')
     } catch { /* no history available */ }
@@ -560,10 +763,10 @@ function handle(m) {
       break
     case 'text_delta':
       hideThinking()
-      if (!curAssistant) curAssistant = bubble('assistant', '')
-      curAssistant.textContent += m.text
+      if (!curAssistant) curAssistant = mdBubble('assistant', '')
+      curAssistant._raw += m.text
+      renderMd(curAssistant)
       turnHadText = true
-      scrollDown()
       break
     case 'tool_start': {
       hideThinking()
@@ -609,7 +812,7 @@ function handle(m) {
     case 'result': {
       hideThinking()
       curAssistant = null
-      if (!turnHadText && m.text) bubble('assistant', m.text)
+      if (!turnHadText && m.text) mdBubble('assistant', m.text)
       const r = document.createElement('div')
       r.className = 'result'
       r.textContent = `${m.success ? '✓' : '✗'} ${m.turns} turn(s) · ${(m.durationMs / 1000).toFixed(0)}s · $${(m.costUsd ?? 0).toFixed(3)}`
