@@ -13,13 +13,17 @@
 //          instance when several are running)
 
 import { createServer, request } from 'node:http'
-import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync, renameSync } from 'node:fs'
 import { homedir, networkInterfaces, tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const UPLOAD_DIR = join(tmpdir(), 'eveng2-uploads')
 const MAX_UPLOAD = 16 * 1024 * 1024   // 16 MB
+// Shared UI state (archives, custom titles, mark-done overrides), persisted
+// on the host so every device sees the same thing.
+const STATE_FILE = join(homedir(), '.even-terminal', 'textinput-overrides.json')
+const MAX_STATE = 1024 * 1024   // 1 MB
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INSTANCE_DIR = join(homedir(), '.even-terminal', 'instances')
@@ -98,6 +102,43 @@ const server = createServer((req, res) => {
     sendJson(res, 200, findInstances().map((i) => ({
       pid: i.pid, port: i.port, cwd: i.cwd, startedAt: i.startedAt,
     })))
+    return
+  }
+
+  // Shared UI state: full-state read/write, last-write-wins — fine for a
+  // single user across a few devices.
+  if (req.method === 'GET' && url === '/companion/overrides') {
+    try {
+      sendJson(res, 200, JSON.parse(readFileSync(STATE_FILE, 'utf8')))
+    } catch {
+      sendJson(res, 200, {})   // no state saved yet
+    }
+    return
+  }
+
+  if ((req.method === 'PUT' || req.method === 'POST') && url === '/companion/overrides') {
+    let size = 0
+    const chunks = []
+    req.on('data', (c) => {
+      size += c.length
+      if (size > MAX_STATE) { sendJson(res, 413, { error: 'State too large' }); req.destroy() }
+      else chunks.push(c)
+    })
+    req.on('end', () => {
+      if (res.headersSent) return
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        const pick = (k) => (body && typeof body[k] === 'object' && body[k]) || {}
+        const state = { done: pick('done'), archived: pick('archived'), titles: pick('titles') }
+        mkdirSync(dirname(STATE_FILE), { recursive: true })
+        // Atomic write so a crash mid-write can't corrupt the state file.
+        writeFileSync(STATE_FILE + '.tmp', JSON.stringify(state))
+        renameSync(STATE_FILE + '.tmp', STATE_FILE)
+        sendJson(res, 200, { ok: true })
+      } catch (err) {
+        sendJson(res, 400, { error: err.message })
+      }
+    })
     return
   }
 

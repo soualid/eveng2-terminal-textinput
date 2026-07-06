@@ -186,16 +186,17 @@
 <body>
 
 <header>
-  <button id="backBtn" style="display:none">‹</button>
+  <button id="backBtn" style="display:none" title="Back to the list">‹</button>
   <div style="flex:1;min-width:0">
     <div class="title" id="hTitle">Even Terminal — text input</div>
     <div class="sub" id="hSub" style="display:none"></div>
     <select id="instSel"><option>connecting…</option></select>
   </div>
   <span class="chip" id="statusChip" style="display:none">idle</span>
-  <button id="stopBtn" style="display:none">■</button>
-  <button id="refreshBtn">↻</button>
-  <button id="newBtn" class="primary">＋</button>
+  <button id="archBtn" style="display:none" title="Archive this conversation">🗄</button>
+  <button id="stopBtn" style="display:none" title="Interrupt Claude">■</button>
+  <button id="refreshBtn" title="Refresh">↻</button>
+  <button id="newBtn" class="primary" title="New session">＋</button>
 </header>
 
 <main id="main">
@@ -208,7 +209,7 @@
   <input id="fileInput" type="file" accept="image/*" multiple hidden>
   <button id="attachBtn" title="Attach screenshot">📎</button>
   <textarea id="input" rows="1" placeholder="Message Claude… (Ctrl+Enter to send)"></textarea>
-  <button id="sendBtn" class="primary">Send</button>
+  <button id="sendBtn" class="primary" title="Send (Ctrl+Enter)">Send</button>
 </div>
 
 <script>
@@ -258,9 +259,62 @@ try {
     localStorage.setItem('archived', JSON.stringify(archived))
   }
 } catch { /* ignore */ }
-function saveOverrides() {
+// Custom titles: id -> title. even-terminal has no rename API (titles come
+// from the session file), so renames live here and shadow the fetched title.
+let titleMap = JSON.parse(localStorage.getItem('titles') || '{}')
+
+// Overrides are persisted on the companion (~/.even-terminal/) so every
+// device sees the same archives/titles. localStorage is kept as a cache for
+// when the companion state hasn't loaded yet (or the fetch fails).
+function cacheOverrides() {
   localStorage.setItem('done', JSON.stringify(doneMap))
   localStorage.setItem('archived', JSON.stringify(archived))
+  localStorage.setItem('titles', JSON.stringify(titleMap))
+}
+function saveOverrides() {
+  cacheOverrides()
+  fetch('/companion/overrides', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ done: doneMap, archived, titles: titleMap }),
+  }).catch(() => { /* offline — the local cache still has it */ })
+}
+async function loadOverrides() {
+  try {
+    const r = await fetch('/companion/overrides')
+    if (!r.ok) return
+    const srv = await r.json()
+    if (!localStorage.getItem('overridesSynced')) {
+      // First contact from this device: merge its local data into the shared
+      // state (server wins on conflicts) and upload the result.
+      doneMap = { ...doneMap, ...(srv.done || {}) }
+      archived = { ...archived, ...(srv.archived || {}) }
+      titleMap = { ...titleMap, ...(srv.titles || {}) }
+      localStorage.setItem('overridesSynced', '1')
+      saveOverrides()
+    } else {
+      // Afterwards the server is the source of truth, so unarchives and
+      // title resets made on another device propagate here too.
+      doneMap = srv.done || {}
+      archived = srv.archived || {}
+      titleMap = srv.titles || {}
+      cacheOverrides()
+    }
+  } catch { /* companion unreachable — keep the cached copy */ }
+}
+function dispTitle(s) {
+  return titleMap[s.id] || s.title || s.id.slice(0, 8)
+}
+// Prompt-based rename shared by the row menu and the session header.
+// Empty input (or the original title) clears the override. Returns the new
+// display title, or null if the user cancelled.
+function renameSession(id, origTitle, currentShown) {
+  const t = prompt('Session title', currentShown || '')
+  if (t === null) return null
+  const v = t.trim()
+  if (!v || v === (origTitle || '')) delete titleMap[id]
+  else titleMap[id] = v
+  saveOverrides()
+  return titleMap[id] || origTitle || id.slice(0, 8)
 }
 function effStatus(s) {
   return (s.status === 'busy' && doneMap[s.id] === s.timestamp) ? 'idle' : s.status
@@ -281,13 +335,16 @@ function showList() {
   $('sessionList').style.display = ''
   $('composer').style.display = 'none'
   $('backBtn').style.display = 'none'
+  $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = ''
   $('hTitle').textContent = 'Even Terminal — text input'
+  $('hTitle').removeAttribute('title')
   $('hSub').style.display = 'none'
   $('instSel').style.display = ''
   $('instSel').value = scope
+  $('main').scrollTop = 0     // coming back from a session: land at the top
   setHash(`#/${scope}`)
   startPolling()
   loadSessions()
@@ -302,10 +359,12 @@ function showSession(id, title) {
   $('transcript').innerHTML = ''
   $('composer').style.display = 'flex'
   $('backBtn').style.display = ''
+  $('archBtn').style.display = id ? '' : 'none'   // nothing to archive before the session exists
   $('stopBtn').style.display = ''
   $('statusChip').style.display = ''
   $('newBtn').style.display = 'none'
   $('hTitle').textContent = title || 'New session'
+  $('hTitle').title = 'Tap to rename'
   $('instSel').style.display = 'none'
   $('hSub').style.display = ''
   const inst = currentInst()
@@ -436,10 +495,10 @@ function renderList() {
       `</div>` +
       (st ? `<span class="chip ${esc(st)}">${esc(st)}</span>` : '') +
       `<button class="kebab" title="Actions">⋯</button>`
-    row.querySelector('.t').textContent = s.title || s.id.slice(0, 8)
+    row.querySelector('.t').textContent = dispTitle(s)
     row.querySelector('.w').textContent = when
     if (st === 'busy') fillLastLine(s, row.querySelector('.pre'))
-    row.onclick = () => { curPort = s._port; showSession(s.id, s.title) }
+    row.onclick = () => { curPort = s._port; showSession(s.id, dispTitle(s)) }
     row.querySelector('.kebab').onclick = (e) => { e.stopPropagation(); rowMenu(e.currentTarget, s) }
     box.appendChild(row)
   }
@@ -467,12 +526,14 @@ function showArchived() {
   $('sessionList').style.display = ''
   $('composer').style.display = 'none'
   $('backBtn').style.display = ''
+  $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = 'none'
   $('instSel').style.display = 'none'
   $('hSub').style.display = 'none'
   $('hTitle').textContent = 'Archives'
+  $('hTitle').removeAttribute('title')
   setHash('#/archived')
   renderArchived()
 }
@@ -494,7 +555,7 @@ function renderArchived() {
     row.innerHTML =
       `<div class="meta"><div class="t"></div>` +
       `<div class="d">${it.proj ? `<span class="proj">${esc(it.proj)}</span> · ` : ''}${esc(when)}</div></div>` +
-      `<button class="unarch">Unarchive</button>`
+      `<button class="unarch" title="Restore to the main list">Unarchive</button>`
     row.querySelector('.t').textContent = it.title || it.id.slice(0, 8)
     row.querySelector('.unarch').onclick = () => { delete archived[it.id]; saveOverrides(); renderArchived() }
     box.appendChild(row)
@@ -515,8 +576,11 @@ function rowMenu(anchor, s) {
   if (s.status === 'busy' && effStatus(s) === 'busy') {
     add('✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() })
   }
+  add('✏️ Rename', () => {
+    if (renameSession(s.id, s.title, dispTitle(s)) !== null) renderList()
+  })
   add('🗄 Archive', () => {
-    archived[s.id] = { title: s.title || null, proj: s._proj || null, ts: s.timestamp || null }
+    archived[s.id] = { title: titleMap[s.id] || s.title || null, proj: s._proj || null, ts: s.timestamp || null }
     saveOverrides(); renderList()
   })
   const r = anchor.getBoundingClientRect()
@@ -740,7 +804,7 @@ function route() {
     const p = Number(seg0)
     if (p && instances.find((i) => i.port === p)) curPort = p
     if (current === id) return           // already showing it (e.g. slug added)
-    showSession(id, parts[2] ? deslug(parts[2]) : null)
+    showSession(id, titleMap[id] || (parts[2] ? deslug(parts[2]) : null))
     return
   }
   // list view: seg0 is 'all' or a port
@@ -902,6 +966,7 @@ function handle(m) {
       if (!current && m.sessionId) {
         current = m.sessionId
         $('hSub').textContent = current.slice(0, 8)
+        $('archBtn').style.display = ''
         // replaceState: update the URL without retriggering route()
         history.replaceState(null, '', `#/${curPort}/${current}`)
       }
@@ -979,7 +1044,7 @@ function renderAttachments() {
   attachments.forEach((a, i) => {
     const el = document.createElement('div')
     el.className = 'att' + (a.status === 'up' ? ' up' : '') + (a.status === 'err' ? ' err' : '')
-    el.innerHTML = `<img src="${a.thumb}"><button class="x">✕</button>`
+    el.innerHTML = `<img src="${a.thumb}"><button class="x" title="Remove attachment">✕</button>`
     el.querySelector('.x').onclick = () => { attachments.splice(i, 1); renderAttachments() }
     box.appendChild(el)
   })
@@ -1045,6 +1110,7 @@ async function send() {
     if (!current && r.sessionId) {
       current = r.sessionId
       $('hSub').textContent = current.slice(0, 8)
+      $('archBtn').style.display = ''
       history.replaceState(null, '', `#/${curPort}/${current}`)
       openStream(current)   // SSE replay will replay user_prompt
     } else if (!es) {
@@ -1069,7 +1135,34 @@ $('input').addEventListener('keydown', (e) => {
   }
 })
 $('backBtn').onclick = showList
-$('refreshBtn').onclick = () => { loadInstances(); current ? (openStream(current)) : loadSessions() }
+// Tap the title of an open session to rename it (local override).
+$('hTitle').onclick = () => {
+  if (view !== 'session' || !current) return
+  const s = allSessions.find((x) => x.id === current)
+  const nt = renameSession(current, s && s.title, $('hTitle').textContent)
+  if (nt === null) return
+  $('hTitle').textContent = nt
+  history.replaceState(null, '', `#/${curPort}/${current}/${slug(nt)}`)
+}
+// Archive the open conversation and drop back to the list. Metadata comes
+// from the aggregated list when available, else from what the header shows.
+$('archBtn').onclick = () => {
+  if (!current) return
+  const s = allSessions.find((x) => x.id === current)
+  const inst = currentInst()
+  archived[current] = {
+    title: titleMap[current] || (s && s.title) || $('hTitle').textContent || null,
+    proj: (s && s._proj) || (inst ? projName(inst) : null),
+    ts: (s && s.timestamp) || null,
+  }
+  saveOverrides()
+  showList()
+}
+$('refreshBtn').onclick = () => {
+  loadInstances()
+  if (current) openStream(current)
+  else loadOverrides().then(loadSessions)   // pick up changes made on other devices
+}
 $('newBtn').onclick = () => {
   const inst = (scope !== 'all' && instances.find((i) => i.port === Number(scope))) || instances[0]
   if (!inst) return
@@ -1083,7 +1176,8 @@ $('stopBtn').onclick = () => current && post('/api/interrupt', { sessionId: curr
   .catch((e) => infoLine('failed: ' + e.message, 'err'))
 
 // ---------- boot ----------
-loadInstances().then(route)   // restore the view encoded in the URL hash
+// Overrides must be in before route(): it decides archived-vs-open by id.
+Promise.all([loadInstances(), loadOverrides()]).then(route)
 </script>
 </body>
 </html>
