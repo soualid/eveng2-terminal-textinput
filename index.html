@@ -39,6 +39,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #06262b; font-weight: 600; }
   button:disabled { opacity: .45; }
   .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--dim); flex-shrink: 0; }
+  #scrollBtn.on { color: var(--accent); border-color: var(--accent); }
   .chip.busy { color: var(--amber); border-color: var(--amber); }
   .chip.idle { color: var(--green); border-color: var(--green); }
   .chip.waiting { color: var(--accent); border-color: var(--accent); }
@@ -193,6 +194,7 @@
     <select id="instSel"><option>connecting…</option></select>
   </div>
   <span class="chip" id="statusChip" style="display:none">idle</span>
+  <button id="scrollBtn" style="display:none" title="Follow new messages (tap to jump to the bottom)">⇣</button>
   <button id="archBtn" style="display:none" title="Archive this conversation">🗄</button>
   <button id="stopBtn" style="display:none" title="Interrupt Claude">■</button>
   <button id="refreshBtn" title="Refresh">↻</button>
@@ -271,14 +273,18 @@ function cacheOverrides() {
   localStorage.setItem('archived', JSON.stringify(archived))
   localStorage.setItem('titles', JSON.stringify(titleMap))
 }
+let pushing = 0   // PUTs in flight — pause adoption so a poll can't revert them
 function saveOverrides() {
   cacheOverrides()
+  pushing++
   fetch('/companion/overrides', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ done: doneMap, archived, titles: titleMap }),
   }).catch(() => { /* offline — the local cache still has it */ })
+    .finally(() => pushing--)
 }
 async function loadOverrides() {
+  if (pushing) return
   try {
     const r = await fetch('/companion/overrides')
     if (!r.ok) return
@@ -335,6 +341,7 @@ function showList() {
   $('sessionList').style.display = ''
   $('composer').style.display = 'none'
   $('backBtn').style.display = 'none'
+  $('scrollBtn').style.display = 'none'
   $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
@@ -359,6 +366,7 @@ function showSession(id, title) {
   $('transcript').innerHTML = ''
   $('composer').style.display = 'flex'
   $('backBtn').style.display = ''
+  $('scrollBtn').style.display = ''
   $('archBtn').style.display = id ? '' : 'none'   // nothing to archive before the session exists
   $('stopBtn').style.display = ''
   $('statusChip').style.display = ''
@@ -374,6 +382,7 @@ function showSession(id, title) {
   curAssistant = null
   thinkingEl = null   // transcript was cleared with innerHTML above
   stick = true        // always land at the bottom when joining a session
+  updateScrollBtn()
   if (id) {
     setHash(`#/${curPort}/${id}${title ? '/' + slug(title) : ''}`)
     attach(id)
@@ -427,12 +436,23 @@ $('instSel').onchange = () => {
 function startPolling() {
   stopPolling()
   pollTimer = setInterval(() => {
-    if (view === 'list' && document.visibilityState === 'visible') loadSessions()
+    if (view === 'list' && document.visibilityState === 'visible') loadOverrides().then(loadSessions)
   }, 5000)
 }
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
+
+// Returning to a backgrounded tab: pull the shared state right away so
+// archives/renames made on another device show up without a manual ↻.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return
+  loadOverrides().then(() => {
+    if (view === 'list') loadSessions()
+    else if (view === 'archived') renderArchived()
+    else if (view === 'session' && current && titleMap[current]) $('hTitle').textContent = titleMap[current]
+  })
+})
 
 // ---------- session list ----------
 // Fetch every instance's sessions in parallel and tag each with its port /
@@ -526,6 +546,7 @@ function showArchived() {
   $('sessionList').style.display = ''
   $('composer').style.display = 'none'
   $('backBtn').style.display = ''
+  $('scrollBtn').style.display = 'none'
   $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
@@ -819,12 +840,22 @@ window.addEventListener('hashchange', route)
 
 // ---------- transcript ----------
 // Stick-to-bottom: on when a session opens, off as soon as the user scrolls
-// up, back on when they return to the bottom.
+// up, back on when they return to the bottom. The ⇣ header button mirrors
+// this state; tapping it jumps to the bottom and re-engages following.
 let stick = true
+function updateScrollBtn() {
+  $('scrollBtn').classList.toggle('on', stick)
+}
 $('main').addEventListener('scroll', () => {
   const m = $('main')
   stick = m.scrollHeight - m.scrollTop - m.clientHeight < 60
+  if (view === 'session') updateScrollBtn()
 })
+$('scrollBtn').onclick = () => {
+  stick = true
+  $('main').scrollTop = $('main').scrollHeight
+  updateScrollBtn()
+}
 function scrollDown() {
   if (stick) $('main').scrollTop = $('main').scrollHeight
 }
