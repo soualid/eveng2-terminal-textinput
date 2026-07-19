@@ -142,24 +142,31 @@ const server = createServer((req, res) => {
     return
   }
 
-  // Receive a screenshot as a data URL, write it to disk, return its absolute
-  // path so the client can reference it in a prompt (Claude Code reads it via
-  // its Read tool). even-terminal's API stays text-only.
+  // Receive a screenshot or zip as a data URL, write it to disk, return its
+  // absolute path so the client can reference it in a prompt (Claude Code
+  // reads/unzips it itself). even-terminal's API stays text-only.
   if (req.method === 'POST' && url === '/companion/upload') {
     let size = 0
     const chunks = []
     req.on('data', (c) => {
       size += c.length
-      if (size > MAX_UPLOAD) { sendJson(res, 413, { error: 'Image too large (max 16 MB)' }); req.destroy() }
+      if (size > MAX_UPLOAD) { sendJson(res, 413, { error: 'File too large (max 16 MB)' }); req.destroy() }
       else chunks.push(c)
     })
     req.on('end', () => {
       if (res.headersSent) return
       try {
-        const { dataUrl } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-        const m = /^data:image\/(png|jpeg|jpg|webp|gif);base64,(.+)$/s.exec(dataUrl || '')
-        if (!m) { sendJson(res, 400, { error: 'Expected an image data URL' }); return }
-        const ext = m[1] === 'jpeg' ? 'jpg' : m[1]
+        const { dataUrl, name } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        const m = /^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/s.exec(dataUrl || '')
+        if (!m) { sendJson(res, 400, { error: 'Expected a base64 data URL' }); return }
+        const MIME_EXT = {
+          'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg',
+          'image/webp': 'webp', 'image/gif': 'gif',
+          'application/zip': 'zip', 'application/x-zip-compressed': 'zip',
+        }
+        // Mobile pickers often report octet-stream for zips — trust the name.
+        const ext = MIME_EXT[m[1]] || (/\.zip$/i.test(name || '') ? 'zip' : null)
+        if (!ext) { sendJson(res, 400, { error: 'Unsupported file type (images and zip only)' }); return }
         mkdirSync(UPLOAD_DIR, { recursive: true })
         // Best-effort GC: drop uploads older than a day.
         try {
@@ -168,8 +175,8 @@ const server = createServer((req, res) => {
             if (Date.now() - statSync(p).mtimeMs > 86_400_000) unlinkSync(p)
           }
         } catch { /* ignore */ }
-        const name = `${Date.now()}-${Math.round(Math.random() * 1e9).toString(36)}.${ext}`
-        const path = join(UPLOAD_DIR, name)
+        const fname = `${Date.now()}-${Math.round(Math.random() * 1e9).toString(36)}.${ext}`
+        const path = join(UPLOAD_DIR, fname)
         writeFileSync(path, Buffer.from(m[2], 'base64'))
         sendJson(res, 200, { path })
       } catch (err) {

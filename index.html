@@ -175,8 +175,15 @@
   }
   .att { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
   .att img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+  .att.file {
+    width: auto; max-width: 150px; display: flex; align-items: center; gap: 6px;
+    padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); font-size: 12px;
+  }
+  .att.file .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .att.up { opacity: .5; }
   .att.err img { border-color: var(--red); }
+  .att.err.file { border-color: var(--red); }
   .att .x {
     position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
     padding: 0; border-radius: 50%; font-size: 11px; line-height: 1;
@@ -208,8 +215,8 @@
 
 <div id="attachments"></div>
 <div id="composer">
-  <input id="fileInput" type="file" accept="image/*" multiple hidden>
-  <button id="attachBtn" title="Attach screenshot">📎</button>
+  <input id="fileInput" type="file" accept="image/*,.zip,application/zip,application/x-zip-compressed" multiple hidden>
+  <button id="attachBtn" title="Attach a screenshot or zip">📎</button>
   <textarea id="input" rows="1" placeholder="Message Claude… (Ctrl+Enter to send)"></textarea>
   <button id="sendBtn" class="primary" title="Send (Ctrl+Enter)">Send</button>
 </div>
@@ -1064,9 +1071,13 @@ function questionCard(m) {
 }
 
 // ---------- attachments ----------
-// Screenshots are uploaded to the companion, which returns an absolute path;
-// we reference those paths in the prompt so Claude Code reads them itself.
-let attachments = []   // { path, thumb, status: 'up'|'done'|'err', name }
+// Screenshots and zips are uploaded to the companion, which returns an
+// absolute path; we reference those paths in the prompt so Claude Code
+// reads (or unzips) them itself.
+let attachments = []   // { path, thumb, kind: 'image'|'zip', status: 'up'|'done'|'err', name }
+
+const isZip = (file) =>
+  /\.zip$/i.test(file.name || '') || /^application\/(zip|x-zip-compressed)$/.test(file.type)
 
 function renderAttachments() {
   const box = $('attachments')
@@ -1074,24 +1085,33 @@ function renderAttachments() {
   box.style.display = attachments.length ? 'flex' : 'none'
   attachments.forEach((a, i) => {
     const el = document.createElement('div')
-    el.className = 'att' + (a.status === 'up' ? ' up' : '') + (a.status === 'err' ? ' err' : '')
-    el.innerHTML = `<img src="${a.thumb}"><button class="x" title="Remove attachment">✕</button>`
+    el.className = 'att' + (a.kind === 'zip' ? ' file' : '') +
+      (a.status === 'up' ? ' up' : '') + (a.status === 'err' ? ' err' : '')
+    el.innerHTML = a.kind === 'zip'
+      ? `<span>🗜</span><span class="fname"></span><button class="x" title="Remove attachment">✕</button>`
+      : `<img src="${a.thumb}"><button class="x" title="Remove attachment">✕</button>`
+    if (a.kind === 'zip') el.querySelector('.fname').textContent = a.name
     el.querySelector('.x').onclick = () => { attachments.splice(i, 1); renderAttachments() }
     box.appendChild(el)
   })
 }
 
-// Upload one image blob/File through the shared attachment flow.
-async function addImageFile(file) {
-  if (!file || !file.type.startsWith('image/')) return
-  const thumb = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file) })
-  const a = { path: null, thumb, status: 'up', name: file.name || 'pasted' }
+// Upload one image or zip blob/File through the shared attachment flow.
+async function addFile(file) {
+  if (!file) return
+  const zip = isZip(file)
+  if (!zip && !file.type.startsWith('image/')) return
+  let dataUrl = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file) })
+  // Pickers may hand zips over as octet-stream — normalize so the server
+  // doesn't have to guess from the mime alone.
+  if (zip) dataUrl = dataUrl.replace(/^data:[^;]*;/, 'data:application/zip;')
+  const a = { path: null, thumb: zip ? null : dataUrl, kind: zip ? 'zip' : 'image', status: 'up', name: file.name || 'pasted' }
   attachments.push(a)
   renderAttachments()
   try {
     const r = await fetch('/companion/upload', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl: thumb }),
+      body: JSON.stringify({ dataUrl, name: a.name }),
     }).then((x) => x.json())
     if (r.error) throw new Error(r.error)
     a.path = r.path; a.status = 'done'
@@ -1103,17 +1123,18 @@ async function addImageFile(file) {
 
 $('attachBtn').onclick = () => $('fileInput').click()
 $('fileInput').onchange = async (e) => {
-  for (const file of [...e.target.files]) await addImageFile(file)
+  for (const file of [...e.target.files]) await addFile(file)
   e.target.value = ''   // allow re-picking the same file
 }
 
 // Paste an image straight into the composer (Ctrl/Cmd+V) — only meaningful in
-// a session, and only when the clipboard actually carries an image.
+// a session, and only when the clipboard actually carries an image or a file.
 $('input').addEventListener('paste', (e) => {
-  const imgs = [...(e.clipboardData?.items || [])].filter((it) => it.type.startsWith('image/'))
-  if (!imgs.length) return
-  e.preventDefault()          // don't drop the image's junk text into the field
-  for (const it of imgs) { const f = it.getAsFile(); if (f) addImageFile(f) }
+  const items = [...(e.clipboardData?.items || [])]
+    .filter((it) => it.kind === 'file' && (it.type.startsWith('image/') || /zip/.test(it.type)))
+  if (!items.length) return
+  e.preventDefault()          // don't drop the file's junk text into the field
+  for (const it of items) { const f = it.getAsFile(); if (f) addFile(f) }
 })
 
 // ---------- sending ----------
@@ -1124,9 +1145,13 @@ async function send() {
   if (attachments.some((a) => a.status === 'up')) { infoLine('waiting for upload…'); return }
   let text = typed
   if (files.length) {
-    const list = files.map((a) => '- ' + a.path).join('\n')
-    text = (typed ? typed + '\n\n' : 'Please look at the attached screenshot(s).\n\n') +
-      'Attached image file(s) — read them:\n' + list
+    const list = files.map((a) =>
+      '- ' + a.path + (a.kind === 'zip' && a.name ? ` (zip archive: ${a.name})` : '')).join('\n')
+    const hasZip = files.some((a) => a.kind === 'zip')
+    text = (typed ? typed + '\n\n' : `Please look at the attached ${hasZip ? 'file(s)' : 'screenshot(s)'}.\n\n`) +
+      (hasZip
+        ? 'Attached file(s) — read the images directly; unzip archives into a temp directory to inspect them:\n'
+        : 'Attached image file(s) — read them:\n') + list
   }
   $('input').value = ''
   $('input').style.height = 'auto'
