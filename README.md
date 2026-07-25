@@ -81,6 +81,31 @@ Everything is driven by environment variables; none are required:
 | `BIND_HOST` | `0.0.0.0` | listen interface — set your Tailscale IP (`100.x`) to restrict access to your tailnet |
 | `EVEN_TERMINAL_PORT` | *(most recent)* | default even-terminal instance when several are running (the UI selector still takes precedence) |
 
+## Optional: patch even-terminal (permission auto-deny + stale busy status)
+
+Two even-terminal behaviors are fixed by a bundled patch:
+
+- **60 s permission auto-deny** — even-terminal auto-denies any permission
+  prompt left unanswered for 60 seconds (hardcoded, not configurable). Patched,
+  prompts wait until you answer them. Aborting a run (stop button) still
+  resolves pending prompts as denied, so nothing leaks. `AskUserQuestion`
+  prompts keep their own 120 s timeout.
+- **Sessions stuck on "busy"** — even-terminal decides busy/idle from the
+  *last* line of the session's `.jsonl` file, but newer Claude Code versions
+  append timestamp-less metadata trailers (`ai-title`, `mode`, `pr-link`, …)
+  after the turn ends, so finished sessions report "busy" forever. Patched,
+  the scan skips those trailers back to the real turn-end marker.
+
+```sh
+npm run patch:even-terminal
+```
+
+This applies [patches/](patches/) to the **global**
+`@evenrealities/even-terminal` install via patch-package, then restart your
+even-terminal instances. Re-run it after every even-terminal update; if the
+version changed, regenerate the patch first (the patch file is pinned to the
+version in its name).
+
 ## Known limitations
 
 - Typing into a session that is **still open in an interactive terminal**

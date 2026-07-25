@@ -8,7 +8,8 @@
     "eveng2-terminal-textinput": "server.mjs"
   },
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "patch:even-terminal": "sh ./patch-even-terminal.sh"
   },
   "engines": {
     "node": ">=18"
