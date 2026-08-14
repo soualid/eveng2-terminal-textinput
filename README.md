@@ -85,15 +85,15 @@ Everything is driven by environment variables; none are required:
 | `BIND_HOST` | `0.0.0.0` | listen interface — set your Tailscale IP (`100.x`) to restrict access to your tailnet |
 | `EVEN_TERMINAL_PORT` | *(most recent)* | default even-terminal instance when several are running (the UI selector still takes precedence) |
 
-## Optional: patch even-terminal (permission auto-deny + stale busy status)
+## Optional: patch even-terminal (prompt auto-deny/skip + stale busy status)
 
 Two even-terminal behaviors are fixed by a bundled patch:
 
-- **60 s permission auto-deny** — even-terminal auto-denies any permission
-  prompt left unanswered for 60 seconds (hardcoded, not configurable). Patched,
-  prompts wait until you answer them. Aborting a run (stop button) still
-  resolves pending prompts as denied, so nothing leaks. `AskUserQuestion`
-  prompts keep their own 120 s timeout.
+- **Prompt auto-deny/auto-skip** — even-terminal auto-denies any permission
+  prompt left unanswered for 60 seconds and auto-skips `AskUserQuestion`
+  prompts after 120 seconds (hardcoded, not configurable). Patched, both wait
+  indefinitely until you answer them. Aborting a run (stop button) still
+  resolves pending prompts as denied/skipped, so nothing leaks.
 - **Sessions stuck on "busy"** — even-terminal decides busy/idle from the
   *last* line of the session's `.jsonl` file, but newer Claude Code versions
   append timestamp-less metadata trailers (`ai-title`, `mode`, `pr-link`, …)

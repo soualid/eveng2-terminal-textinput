@@ -1,8 +1,9 @@
 #!/bin/sh
 # Apply patches/ to the GLOBAL @evenrealities/even-terminal install via
-# patch-package. Removes the 60 s auto-deny on permission prompts (Claude and
-# Codex sessions) so they wait until someone answers; abort/stop still
-# resolves them as denied. Re-run after every `npm i -g
+# patch-package. Removes the 60 s auto-deny on permission prompts and the
+# 120 s auto-skip on user questions (Claude and Codex sessions) so both wait
+# until someone answers; abort/stop still resolves them as denied/skipped.
+# Re-run after every `npm i -g
 # @evenrealities/even-terminal` — a version bump needs the patch regenerated
 # (patches/ is pinned to the version in its filename).
 #

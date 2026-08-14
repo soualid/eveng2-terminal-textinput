@@ -85,7 +85,7 @@ index e4a0172..0a3ce19 100644
  // ── SDK message → display turn helpers ────────────────
  function extractTextContent(content) {
 diff --git a/node_modules/@evenrealities/even-terminal/dist/claude/session.js b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
-index a98fa8d..2baa4a4 100644
+index a98fa8d..5b964df 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/claude/session.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
 @@ -162,7 +162,7 @@ export class ClaudeSession {
@@ -97,6 +97,15 @@ index a98fa8d..2baa4a4 100644
              const onAbort = () => finish(defaultValue);
              signal.addEventListener("abort", onAbort, { once: true });
              queue.push(entry);
+@@ -415,7 +415,7 @@ export class ClaudeSession {
+             })),
+             toolUseId: toolUseID,
+         });
+-        const answer = await this.waitForUser(this.pendingQuestions, signal, 120000, "skip");
++        const answer = await this.waitForUser(this.pendingQuestions, signal, 0, "skip");
+         let answers = {};
+         try {
+             answers = JSON.parse(answer);
 @@ -468,7 +468,7 @@ export class ClaudeSession {
              options: permissionOptions,
              suggestions: suggestions ?? null,
@@ -107,18 +116,32 @@ index a98fa8d..2baa4a4 100644
          if (result.allowAlways) {
              this.alwaysAllowedTools.add(toolName);
 diff --git a/node_modules/@evenrealities/even-terminal/dist/codex/session.js b/node_modules/@evenrealities/even-terminal/dist/codex/session.js
-index 5280b23..a243921 100644
+index 5280b23..b1198c8 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/codex/session.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/codex/session.js
-@@ -19,7 +19,7 @@ export class CodexSession {
+@@ -19,8 +19,8 @@ export class CodexSession {
      pendingPermissions = [];
      externallyResolvedPermissions = new Map();
      pendingQuestions = [];
 -    permissionTimeoutMs = 60000;
+-    questionTimeoutMs = 120000;
 +    permissionTimeoutMs = 0;
-     questionTimeoutMs = 120000;
++    questionTimeoutMs = 0;
      assistantText = "";
      turnStartedAt = 0;
+     emittedToolStarts = new Set();
+@@ -355,9 +355,9 @@ export class CodexSession {
+         if (method === "item/tool/requestUserInput" ||
+             method === "mcpServer/elicitation/request") {
+             const requestKey = String(requestId);
+-            const timer = setTimeout(() => {
++            const timer = this.questionTimeoutMs ? setTimeout(() => {
+                 this.autoRespondQuestion(requestKey, "skip");
+-            }, this.questionTimeoutMs);
++            }, this.questionTimeoutMs) : null;
+             this.pendingQuestions.push({ requestId, method, params, timer });
+             const questions = normalizeQuestions(method, params);
+             console.log(`[codex-session] User question request: requestId=${requestKey} method=${method} questions=${questions.length}`);
 @@ -517,9 +517,9 @@ export class CodexSession {
          if (!pending || pending.visible)
              return;
