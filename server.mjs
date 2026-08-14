@@ -46,8 +46,22 @@ function isPidAlive(pid) {
   }
 }
 
-// Same logic as even-terminal's listLiveInstances(): live pidfiles,
-// most recent first.
+// The pid holding the LISTEN socket on `port`, or null if nobody does.
+function listeningPid(port) {
+  try {
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' })
+    return Number(out.trim().split('\n')[0]) || null
+  } catch {
+    return null   // lsof exits 1 when nothing listens on the port
+  }
+}
+
+// Same logic as even-terminal's listLiveInstances() (live pidfiles, most
+// recent first), plus one entry per port: a daemon launched while its port
+// is already taken keeps running — and keeps its pidfile — without ever
+// binding, so several live pidfiles can claim the same port. The pid that
+// actually holds the socket wins (restart must kill that one); with no
+// listener at all, the most recent pidfile does.
 function findInstances() {
   let entries
   try {
@@ -66,7 +80,17 @@ function findInstances() {
     }
   }
   live.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
-  return live
+  const byPort = new Map()
+  const listeners = new Map()
+  for (const info of live) {
+    if (!byPort.has(info.port)) {
+      byPort.set(info.port, info)
+      continue
+    }
+    if (!listeners.has(info.port)) listeners.set(info.port, listeningPid(info.port))
+    if (info.pid === listeners.get(info.port)) byPort.set(info.port, info)
+  }
+  return [...byPort.values()]
 }
 
 // portOverride comes from the UI (?_inst=<port>); falls back to
