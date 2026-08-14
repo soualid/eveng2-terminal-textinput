@@ -204,6 +204,7 @@
   <button id="scrollBtn" style="display:none" title="Follow new messages (tap to jump to the bottom)">⇣</button>
   <button id="archBtn" style="display:none" title="Archive this conversation">🗄</button>
   <button id="stopBtn" style="display:none" title="Interrupt Claude">■</button>
+  <button id="restartBtn" style="display:none" title="Restart even-terminal (when everything is stuck)">🔄</button>
   <button id="refreshBtn" title="Refresh">↻</button>
   <button id="newBtn" class="primary" title="New session">＋</button>
 </header>
@@ -351,6 +352,7 @@ function showList() {
   $('scrollBtn').style.display = 'none'
   $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
+  $('restartBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = ''
   $('hTitle').textContent = 'Even Terminal — text input'
@@ -376,6 +378,7 @@ function showSession(id, title) {
   $('scrollBtn').style.display = ''
   $('archBtn').style.display = id ? '' : 'none'   // nothing to archive before the session exists
   $('stopBtn').style.display = ''
+  $('restartBtn').style.display = ''
   $('statusChip').style.display = ''
   $('newBtn').style.display = 'none'
   $('hTitle').textContent = title || 'New session'
@@ -556,6 +559,7 @@ function showArchived() {
   $('scrollBtn').style.display = 'none'
   $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
+  $('restartBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = 'none'
   $('instSel').style.display = 'none'
@@ -611,6 +615,7 @@ function rowMenu(anchor, s) {
     archived[s.id] = { title: titleMap[s.id] || s.title || null, proj: s._proj || null, ts: s.timestamp || null }
     saveOverrides(); renderList()
   })
+  add('🔄 Restart even-terminal', () => doRestart(s._port))
   const r = anchor.getBoundingClientRect()
   m.style.top = `${r.bottom + 4}px`
   m.style.right = `${window.innerWidth - r.right}px`
@@ -1230,6 +1235,41 @@ $('newBtn').onclick = () => {
 $('stopBtn').onclick = () => current && post('/api/interrupt', { sessionId: current, provider: 'claude' })
   .then(() => infoLine('interrupt requested'))
   .catch((e) => infoLine('failed: ' + e.message, 'err'))
+
+// Last-resort unstick: when an instance is wedged (busy forever, interrupt
+// ignored) the companion kills the even-terminal process (and its claude
+// subprocesses) and respawns it. Sessions live on disk, so the open one
+// resumes with the next message — only the in-flight turn is lost.
+let restarting = false
+async function doRestart(port) {
+  if (restarting || !port) return
+  if (!confirm(`Restart even-terminal :${port}?\n\nThe process and its Claude subprocesses are killed and relaunched. Sessions resume from disk with your next message; only the turn in progress is lost.`)) return
+  restarting = true
+  if (view === 'session' && es) { es.close(); es = null }   // silence the stream-lost error
+  const note = view === 'session' ? infoLine(`restarting even-terminal :${port}…`) : null
+  try {
+    const r = await fetch('/companion/restart-instance', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port }),
+    }).then((x) => x.json())
+    if (r.error) throw new Error(r.error)
+    note?.remove()
+    await loadInstances()
+    if (view === 'session') {
+      infoLine(`✓ even-terminal restarted — your next message resumes this session`)
+      setChip('idle')
+      if (current) openStream(current)
+    } else if (view === 'list') {
+      loadSessions()
+    }
+  } catch (err) {
+    note?.remove()
+    if (view === 'session') infoLine('restart failed: ' + err.message, 'err')
+    else alert('Restart failed: ' + err.message)
+  }
+  restarting = false
+}
+$('restartBtn').onclick = () => doRestart(curPort)
 
 // ---------- boot ----------
 // Overrides must be in before route(): it decides archived-vs-open by id.

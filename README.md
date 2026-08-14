@@ -18,6 +18,10 @@ glasses HUD — both see exactly the same sessions.
   tool (even-terminal's API stays text-only)
 - ✅ **Permission and question prompts** answered with buttons, plus an
   interrupt button
+- 🔄 **Restart button** for when everything is stuck: the companion kills the
+  wedged `even-terminal` process (and its claude subprocesses) and respawns it
+  detached with the same command line — sessions live on disk, so the open one
+  resumes with the next message
 - 🗄 **Archive** conversations to clear them off the main screen; archived
   ones move to a read-only Archives view where they can only be unarchived
 - 🌐 **Unified view**: one list aggregating the sessions of every running

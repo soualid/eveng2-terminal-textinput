@@ -13,10 +13,11 @@
 //          instance when several are running)
 
 import { createServer, request } from 'node:http'
-import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync, renameSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync, renameSync, openSync, closeSync } from 'node:fs'
 import { homedir, networkInterfaces, tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawn, execFileSync } from 'node:child_process'
 
 const UPLOAD_DIR = join(tmpdir(), 'eveng2-uploads')
 const MAX_UPLOAD = 16 * 1024 * 1024   // 16 MB
@@ -82,6 +83,87 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj))
 }
 
+// ---- instance restart ------------------------------------------------------
+// A wedged even-terminal (or its claude subprocess) can leave every session
+// stuck busy with no API-level way out; the only cure is bouncing the whole
+// instance. Sessions live on disk and resume on the next prompt, so a
+// restart loses nothing but the in-flight turn.
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+function childPids(pid) {
+  try {
+    return execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' })
+      .trim().split('\n').filter(Boolean).map(Number)
+  } catch {
+    return []   // pgrep exits 1 when there are no children
+  }
+}
+
+// The exact argv the instance was started with, so the respawn keeps every
+// flag (--provider, --log-file, …). The bare `node` of the original shell is
+// pinned to our own binary since the detached child won't inherit that PATH.
+function instanceArgv(pid) {
+  try {
+    const args = execFileSync('ps', ['-o', 'args=', '-p', String(pid)], { encoding: 'utf8' })
+      .trim().split(/\s+/)
+    if (!args.some((a) => a.includes('even-terminal'))) return null
+    if (basename(args[0]) === 'node') args[0] = process.execPath
+    return args
+  } catch {
+    return null
+  }
+}
+
+async function killTree(pid, kids) {
+  const all = [pid, ...kids]
+  const alive = () => all.filter(isPidAlive)
+  for (const p of all) { try { process.kill(p, 'SIGTERM') } catch { /* already gone */ } }
+  for (let i = 0; i < 20 && alive().length; i++) await sleep(200)
+  for (const p of alive()) { try { process.kill(p, 'SIGKILL') } catch { /* already gone */ } }
+  for (let i = 0; i < 10 && alive().length; i++) await sleep(200)
+  return alive().length === 0
+}
+
+async function restartInstance(port) {
+  const inst = findInstances().find((i) => i.port === port)
+  if (!inst) return { status: 404, body: { error: `No live even-terminal instance on port ${port}` } }
+
+  // Capture argv and children before the kill — both need a live process.
+  const argv = instanceArgv(inst.pid) ??
+    [process.execPath, join(dirname(process.execPath), 'even-terminal'),
+      '-d', inst.cwd, '-p', String(inst.port), '-t', inst.token]
+  const kids = childPids(inst.pid)
+
+  if (!await killTree(inst.pid, kids)) {
+    return { status: 500, body: { error: `Could not kill pid ${inst.pid} — restart it manually` } }
+  }
+
+  // Detached respawn, logs to a file since the original terminal is lost.
+  const logPath = join(homedir(), '.even-terminal', `textinput-restart-${port}.log`)
+  let fd
+  try {
+    mkdirSync(dirname(logPath), { recursive: true })
+    fd = openSync(logPath, 'a')
+    const child = spawn(argv[0], argv.slice(1), {
+      cwd: inst.cwd, detached: true, stdio: ['ignore', fd, fd],
+    })
+    child.unref()
+  } catch (err) {
+    return { status: 500, body: { error: `Respawn failed: ${err.message}` } }
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
+
+  // Up = the new pidfile shows a live instance on the same port.
+  for (let i = 0; i < 50; i++) {
+    await sleep(200)
+    const fresh = findInstances().find((i2) => i2.port === port && i2.pid !== inst.pid)
+    if (fresh) return { status: 200, body: { ok: true, pid: fresh.pid, log: logPath } }
+  }
+  return { status: 504, body: { error: `even-terminal did not come back on port ${port} — see ${logPath}` } }
+}
+
 const server = createServer((req, res) => {
   const url = req.url ?? '/'
 
@@ -137,6 +219,27 @@ const server = createServer((req, res) => {
         sendJson(res, 200, { ok: true })
       } catch (err) {
         sendJson(res, 400, { error: err.message })
+      }
+    })
+    return
+  }
+
+  // Bounce a stuck even-terminal instance: kill it (and its claude
+  // subprocesses) then respawn it detached with the same command line.
+  if (req.method === 'POST' && url === '/companion/restart-instance') {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', async () => {
+      let port
+      try {
+        port = Number(JSON.parse(Buffer.concat(chunks).toString('utf8')).port)
+      } catch { /* fall through to the check below */ }
+      if (!Number.isInteger(port)) { sendJson(res, 400, { error: 'Expected { port }' }); return }
+      try {
+        const { status, body } = await restartInstance(port)
+        sendJson(res, status, body)
+      } catch (err) {
+        sendJson(res, 500, { error: err.message })
       }
     })
     return
