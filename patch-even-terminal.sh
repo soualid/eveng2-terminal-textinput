@@ -3,6 +3,8 @@
 # patch-package. Removes the 60 s auto-deny on permission prompts and the
 # 120 s auto-skip on user questions (Claude and Codex sessions) so both wait
 # until someone answers; abort/stop still resolves them as denied/skipped.
+# Also lets POST /api/prompt carry an optional `model` field (applied to the
+# Claude session's next run) so the UI can offer a model picker.
 # Re-run after every `npm i -g
 # @evenrealities/even-terminal` — a version bump needs the patch regenerated
 # (patches/ is pinned to the version in its filename).

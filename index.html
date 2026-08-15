@@ -26,7 +26,7 @@
   }
   header .title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   header .sub { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #instSel {
+  #instSel, #modelSel {
     display: block; width: 100%; background: none; border: none; padding: 0;
     color: var(--accent); font-size: 12px; font-family: inherit;
   }
@@ -199,6 +199,13 @@
     <div class="title" id="hTitle">Even Terminal — text input</div>
     <div class="sub" id="hSub" style="display:none"></div>
     <select id="instSel"><option>connecting…</option></select>
+    <select id="modelSel" style="display:none" title="Model for the next message">
+      <option value="">🧠 Opus 4.6 · default ▾</option>
+      <option value="claude-fable-5">🧠 Fable 5 ▾</option>
+      <option value="claude-opus-5">🧠 Opus 5 ▾</option>
+      <option value="claude-sonnet-5">🧠 Sonnet 5 ▾</option>
+      <option value="claude-haiku-4-5-20251001">🧠 Haiku 4.5 ▾</option>
+    </select>
   </div>
   <span class="chip" id="statusChip" style="display:none">idle</span>
   <button id="scrollBtn" style="display:none" title="Follow new messages (tap to jump to the bottom)">⇣</button>
@@ -247,6 +254,9 @@ let instances = []           // live even-terminal instances
 // filters to one. Sessions are always fetched from all instances so the
 // global bar reflects everything regardless of the current filter.
 let scope = localStorage.getItem('scope') || 'all'
+// Model for prompts, applied session-wide by even-terminal on the next
+// message ('' = even-terminal's built-in default). Persisted per device.
+let model = localStorage.getItem('model') || ''
 let allSessions = []         // aggregated sessions, each tagged with _port/_proj
 let curPort = null           // port of the open session (or new-session target)
 let pollTimer = null
@@ -360,6 +370,7 @@ function showList() {
   $('hSub').style.display = 'none'
   $('instSel').style.display = ''
   $('instSel').value = scope
+  $('modelSel').style.display = 'none'
   $('main').scrollTop = 0     // coming back from a session: land at the top
   setHash(`#/${scope}`)
   startPolling()
@@ -384,6 +395,7 @@ function showSession(id, title) {
   $('hTitle').textContent = title || 'New session'
   $('hTitle').title = 'Tap to rename'
   $('instSel').style.display = 'none'
+  $('modelSel').style.display = ''
   $('hSub').style.display = ''
   const inst = currentInst()
   $('hSub').textContent = (id ? id.slice(0, 8) : (pendingCwd || (inst && inst.cwd) || '')) +
@@ -440,6 +452,16 @@ $('instSel').onchange = () => {
   scope = $('instSel').value || 'all'
   localStorage.setItem('scope', scope)
   showList()
+}
+
+// Model choice takes effect on the next message (even-terminal applies it to
+// the session's next run). Requires the patched even-terminal; an unpatched
+// one simply ignores the field.
+$('modelSel').value = model
+if ($('modelSel').value !== model) { model = ''; $('modelSel').value = '' }   // stale stored id
+$('modelSel').onchange = () => {
+  model = $('modelSel').value
+  localStorage.setItem('model', model)
 }
 
 // Poll the global view so the pill bar stays live while browsing the list.
@@ -563,6 +585,7 @@ function showArchived() {
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = 'none'
   $('instSel').style.display = 'none'
+  $('modelSel').style.display = 'none'
   $('hSub').style.display = 'none'
   $('hTitle').textContent = 'Archives'
   $('hTitle').removeAttribute('title')
@@ -1165,6 +1188,7 @@ async function send() {
   setChip('busy')
   try {
     const body = { text, provider: 'claude' }
+    if (model) body.model = model
     if (current) body.sessionId = current
     else if (pendingCwd) body.cwd = pendingCwd
     const r = await post('/api/prompt', body)

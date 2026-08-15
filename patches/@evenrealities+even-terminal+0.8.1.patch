@@ -84,11 +84,36 @@ index e4a0172..0a3ce19 100644
  }
  // ── SDK message → display turn helpers ────────────────
  function extractTextContent(content) {
+@@ -99,7 +111,7 @@ export function createClaudeProvider(emit) {
+             sessions.set(sessionId, session);
+         return session;
+     }
+-    async function prompt(sessionId, text, cwd) {
++    async function prompt(sessionId, text, cwd, model) {
+         let session;
+         if (sessionId)
+             session = sessions.get(sessionId);
+@@ -110,6 +122,7 @@ export function createClaudeProvider(emit) {
+             session = makeSession(sessionId);
+             await session.start(sessionId, cwd);
+         }
++        session.model = typeof model === "string" && model ? model : null;
+         // Emit user_prompt when session ID is known
+         session.onIdReady((sid) => {
+             emit(sid, { type: "user_prompt", text });
 diff --git a/node_modules/@evenrealities/even-terminal/dist/claude/session.js b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
-index a98fa8d..5b964df 100644
+index a98fa8d..e3c4851 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/claude/session.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
-@@ -162,7 +162,7 @@ export class ClaudeSession {
+@@ -74,6 +74,7 @@ export class ClaudeSession {
+     idPromise = null;
+     idReadyCallbacks = [];
+     promptQueue = [];
++    model = null;
+     constructor(emit) {
+         this.emit = emit;
+     }
+@@ -162,7 +163,7 @@ export class ClaudeSession {
                      queue.splice(idx, 1);
                  resolve(value);
              };
@@ -97,7 +122,16 @@ index a98fa8d..5b964df 100644
              const onAbort = () => finish(defaultValue);
              signal.addEventListener("abort", onAbort, { once: true });
              queue.push(entry);
-@@ -415,7 +415,7 @@ export class ClaudeSession {
+@@ -238,7 +239,7 @@ export class ClaudeSession {
+             options: {
+                 resume: this.sessionId,
+                 cwd: this.lockedCwd,
+-                model: "claude-opus-4-6",
++                model: this.model || "claude-opus-4-6",
+                 allowedTools: [
+                     "Read", "Edit", "Glob", "Grep", "Agent",
+                     "WebSearch", "WebFetch",
+@@ -415,7 +416,7 @@ export class ClaudeSession {
              })),
              toolUseId: toolUseID,
          });
@@ -106,7 +140,7 @@ index a98fa8d..5b964df 100644
          let answers = {};
          try {
              answers = JSON.parse(answer);
-@@ -468,7 +468,7 @@ export class ClaudeSession {
+@@ -468,7 +469,7 @@ export class ClaudeSession {
              options: permissionOptions,
              suggestions: suggestions ?? null,
          });
@@ -154,3 +188,25 @@ index 5280b23..b1198c8 100644
          const description = summarizeCodexRequest(pending.params, pending.method);
          this.send({
              type: "permission_request",
+diff --git a/node_modules/@evenrealities/even-terminal/dist/routes/core.js b/node_modules/@evenrealities/even-terminal/dist/routes/core.js
+index 95df406..54a5857 100644
+--- a/node_modules/@evenrealities/even-terminal/dist/routes/core.js
++++ b/node_modules/@evenrealities/even-terminal/dist/routes/core.js
+@@ -105,7 +105,7 @@ router.get("/update-check", async (_req, res) => {
+ });
+ // POST /api/prompt — send a prompt to a session (create if needed)
+ router.post("/prompt", async (req, res) => {
+-    const { text, sessionId, provider, cwd } = req.body ?? {};
++    const { text, sessionId, provider, cwd, model } = req.body ?? {};
+     console.log(`[prompt] sessionId=${sessionId ?? "(none)"} (provider=${provider}) text=${(text || "").slice(0, 80)}`);
+     if (!text || typeof text !== "string") {
+         console.warn("[prompt] rejected: missing text field");
+@@ -115,7 +115,7 @@ router.post("/prompt", async (req, res) => {
+     try {
+         const p = provider || getDefaultProvider();
+         const targetProvider = getProvider(p);
+-        const result = await targetProvider.prompt(sessionId, text, cwd);
++        const result = await targetProvider.prompt(sessionId, text, cwd, typeof model === "string" && model ? model : undefined);
+         res.status(202).json({ ok: true, sessionId: result.sessionId, provider: result.provider });
+     }
+     catch (err) {

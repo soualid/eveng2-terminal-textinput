@@ -85,9 +85,9 @@ Everything is driven by environment variables; none are required:
 | `BIND_HOST` | `0.0.0.0` | listen interface — set your Tailscale IP (`100.x`) to restrict access to your tailnet |
 | `EVEN_TERMINAL_PORT` | *(most recent)* | default even-terminal instance when several are running (the UI selector still takes precedence) |
 
-## Optional: patch even-terminal (prompt auto-deny/skip + stale busy status)
+## Optional: patch even-terminal (prompt auto-deny/skip + stale busy status + model picker)
 
-Two even-terminal behaviors are fixed by a bundled patch:
+Three even-terminal behaviors are changed by a bundled patch:
 
 - **Prompt auto-deny/auto-skip** — even-terminal auto-denies any permission
   prompt left unanswered for 60 seconds and auto-skips `AskUserQuestion`
@@ -99,6 +99,11 @@ Two even-terminal behaviors are fixed by a bundled patch:
   append timestamp-less metadata trailers (`ai-title`, `mode`, `pr-link`, …)
   after the turn ends, so finished sessions report "busy" forever. Patched,
   the scan skips those trailers back to the real turn-end marker.
+- **Model selection** — even-terminal hardcodes the Claude model
+  (`claude-opus-4-6`). Patched, `POST /api/prompt` accepts an optional `model`
+  field applied to the session's next run. The page's session header shows a
+  🧠 model selector built on this; without the patch the field is ignored and
+  the default model is used.
 
 ```sh
 npm run patch:even-terminal
