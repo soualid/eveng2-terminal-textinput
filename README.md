@@ -85,9 +85,9 @@ Everything is driven by environment variables; none are required:
 | `BIND_HOST` | `0.0.0.0` | listen interface — set your Tailscale IP (`100.x`) to restrict access to your tailnet |
 | `EVEN_TERMINAL_PORT` | *(most recent)* | default even-terminal instance when several are running (the UI selector still takes precedence) |
 
-## Optional: patch even-terminal (prompt auto-deny/skip + stale busy status + model picker)
+## Optional: patch even-terminal (prompt auto-deny/skip + stale busy status + model picker + timestamps)
 
-Three even-terminal behaviors are changed by a bundled patch:
+Four even-terminal behaviors are changed by a bundled patch:
 
 - **Prompt auto-deny/auto-skip** — even-terminal auto-denies any permission
   prompt left unanswered for 60 seconds and auto-skips `AskUserQuestion`
@@ -104,6 +104,13 @@ Three even-terminal behaviors are changed by a bundled patch:
   field applied to the session's next run. The page's session header shows a
   🧠 model selector built on this; without the patch the field is ignored and
   the default model is used.
+- **Message timestamps** — SSE events carry no clock, so after a replay the
+  page can't tell when anything actually happened. Patched, every buffered
+  event is stamped with `ts` (epoch ms) and history entries expose the
+  session file's ISO timestamp. The page shows the time on every transcript
+  line (bubbles, tools, info and result lines; full date in the hover
+  tooltip), so you can tell when the last LLM roundtrip took place. Without
+  the patch nothing is shown.
 
 ```sh
 npm run patch:even-terminal

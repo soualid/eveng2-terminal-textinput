@@ -1,5 +1,5 @@
 diff --git a/node_modules/@evenrealities/even-terminal/dist/claude/provider.js b/node_modules/@evenrealities/even-terminal/dist/claude/provider.js
-index e4a0172..0a3ce19 100644
+index e4a0172..32b7de9 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/claude/provider.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/claude/provider.js
 @@ -17,13 +17,10 @@ function findSessionFile(sessionId) {
@@ -101,6 +101,15 @@ index e4a0172..0a3ce19 100644
          // Emit user_prompt when session ID is known
          session.onIdReady((sid) => {
              emit(sid, { type: "user_prompt", text });
+@@ -219,7 +232,7 @@ export function createClaudeProvider(emit) {
+             const contents = msg.message?.content;
+             for (let content of contents) {
+                 if (content?.type === "text") {
+-                    acc.push({ role: msg.type, text: content.text });
++                    acc.push({ role: msg.type, text: content.text, ts: msg.timestamp });
+                 }
+             }
+             return acc;
 diff --git a/node_modules/@evenrealities/even-terminal/dist/claude/session.js b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
 index a98fa8d..e3c4851 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/claude/session.js
@@ -210,3 +219,16 @@ index 95df406..54a5857 100644
          res.status(202).json({ ok: true, sessionId: result.sessionId, provider: result.provider });
      }
      catch (err) {
+diff --git a/node_modules/@evenrealities/even-terminal/dist/routes/events.js b/node_modules/@evenrealities/even-terminal/dist/routes/events.js
+index d87c6b1..9e304e4 100644
+--- a/node_modules/@evenrealities/even-terminal/dist/routes/events.js
++++ b/node_modules/@evenrealities/even-terminal/dist/routes/events.js
+@@ -15,6 +15,8 @@ function getSession(sessionId) {
+ export function pushMessage(sessionId, msg) {
+     const s = getSession(sessionId);
+     const id = s.nextId++;
++    if (msg.ts === undefined)
++        msg.ts = Date.now();
+     s.messages.push({ id, msg });
+     if (s.messages.length > MAX_MESSAGES_PER_SESSION) {
+         s.messages.shift();

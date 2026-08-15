@@ -155,6 +155,10 @@
   .card .opts button small { display: block; color: var(--dim); font-weight: 400; }
   .card.done { border-color: var(--border); opacity: .6; }
   .result { font-size: 11.5px; color: var(--dim); text-align: center; padding: 4px 0 8px; }
+  /* per-line timestamp, rendered from data-when so streaming innerHTML
+     rewrites can't wipe it */
+  [data-when]::after { content: attr(data-when); color: var(--dim); font-size: 10px; margin-left: 6px; }
+  .bubble[data-when]::after, .card[data-when]::after { display: block; text-align: right; margin: 2px 0 0; opacity: .75; }
 
   /* ---- composer ---- */
   #composer {
@@ -664,6 +668,20 @@ async function fillLastLine(s, el) {
   } catch { /* keep the placeholder */ }
 }
 
+// When the message happened, shown on every transcript line (data-when +
+// CSS ::after) with the full date in the hover tooltip. ts comes from the
+// patched even-terminal (epoch ms stamped on each SSE event, ISO string on
+// history entries); unpatched instances send none and nothing is shown.
+function stamp(el, ts) {
+  if (ts != null) {
+    const d = new Date(ts)
+    if (!isNaN(d)) {
+      el.title = d.toLocaleString()
+      el.dataset.when = d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString() : d.toLocaleString()
+    }
+  }
+  return el
+}
 function relTime(d) {
   const s = Math.floor((Date.now() - d.getTime()) / 1000)
   if (s < 60) return 'just now'
@@ -931,8 +949,8 @@ async function attach(id) {
     try {
       const { history } = await api(`/api/sessions/${id}/history?provider=claude&limit=10`)
       for (const h of history || []) {
-        if (h.role === 'user') bubble('user dim', h.text)
-        else mdBubble('assistant dim', h.text)
+        if (h.role === 'user') stamp(bubble('user dim', h.text), h.ts)
+        else stamp(mdBubble('assistant dim', h.text), h.ts)
       }
       if (history && history.length) infoLine('— history · your next message resumes this session —')
     } catch { /* no history available */ }
@@ -969,12 +987,13 @@ function handle(m) {
   switch (m.type) {
     case 'user_prompt':
       curAssistant = null; turnHadText = false
-      bubble('user', m.text)
+      stamp(bubble('user', m.text), m.ts)
       break
     case 'text_delta':
       hideThinking()
       if (!curAssistant) curAssistant = mdBubble('assistant', '')
       curAssistant._raw += m.text
+      stamp(curAssistant, m.ts)   // last delta wins: hovering shows when the reply finished
       renderMd(curAssistant)
       turnHadText = true
       break
@@ -986,12 +1005,13 @@ function handle(m) {
       t.innerHTML = `<span class="spin"></span>`
       t.firstChild.textContent = '🔧 ' + m.name
       toolEls.set(m.toolId, t)
-      addEl(t)
+      addEl(stamp(t, m.ts))
       break
     }
     case 'tool_end': {
       const t = toolEls.get(m.toolId) || addEl(Object.assign(document.createElement('div'), { className: 'tool' }))
       toolEls.delete(m.toolId)
+      stamp(t, m.ts)
       t.textContent = '✓ ' + (m.summary || m.name)
       const pre = document.createElement('pre')
       pre.textContent = JSON.stringify(m.detail?.input ?? {}, null, 1).slice(0, 2000) +
@@ -1004,12 +1024,12 @@ function handle(m) {
     case 'permission_request': permissionCard(m); break
     case 'permission_result':
       finishCards()
-      infoLine(`${m.decision === 'denied' ? '✗ denied' : '✓ allowed'} — ${m.summary || m.toolName}`)
+      stamp(infoLine(`${m.decision === 'denied' ? '✗ denied' : '✓ allowed'} — ${m.summary || m.toolName}`), m.ts)
       break
     case 'user_question': questionCard(m); break
     case 'question_answer':
       finishCards()
-      infoLine('answer sent: ' + Object.values(m.answers || {}).join(' · '))
+      stamp(infoLine('answer sent: ' + Object.values(m.answers || {}).join(' · ')), m.ts)
       break
     case 'status':
       if (m.state === 'think_start') showThinking()
@@ -1022,11 +1042,11 @@ function handle(m) {
     case 'result': {
       hideThinking()
       curAssistant = null
-      if (!turnHadText && m.text) mdBubble('assistant', m.text)
+      if (!turnHadText && m.text) stamp(mdBubble('assistant', m.text), m.ts)
       const r = document.createElement('div')
       r.className = 'result'
       r.textContent = `${m.success ? '✓' : '✗'} ${m.turns} turn(s) · ${(m.durationMs / 1000).toFixed(0)}s · $${(m.costUsd ?? 0).toFixed(3)}`
-      addEl(r)
+      addEl(stamp(r, m.ts))
       setChip('idle')
       // first reply of a brand-new session: grab its id
       if (!current && m.sessionId) {
@@ -1038,9 +1058,9 @@ function handle(m) {
       }
       break
     }
-    case 'error': infoLine('error: ' + m.message, 'err'); break
-    case 'notification': infoLine(m.text || m.message || ''); break
-    case 'task_progress': infoLine(m.text || m.message || m.status || 'working…'); break
+    case 'error': stamp(infoLine('error: ' + m.message, 'err'), m.ts); break
+    case 'notification': stamp(infoLine(m.text || m.message || ''), m.ts); break
+    case 'task_progress': stamp(infoLine(m.text || m.message || m.status || 'working…'), m.ts); break
     case 'running_stats': break // too chatty for the UI
   }
 }
@@ -1066,7 +1086,7 @@ function permissionCard(m) {
     opts.appendChild(b)
   }
   permCards.push(card)
-  addEl(card)
+  addEl(stamp(card, m.ts))
 }
 
 function questionCard(m) {
@@ -1095,7 +1115,7 @@ function questionCard(m) {
     card.append(h, p, opts)
   }
   permCards.push(card)
-  addEl(card)
+  addEl(stamp(card, m.ts))
 }
 
 // ---------- attachments ----------
