@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>eveng2-terminal-textinput</title>
+<title>Even Terminal — text input</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d1117'/><path d='M17 20l16 12-16 12' stroke='%234bb7c3' stroke-width='7' stroke-linecap='round' stroke-linejoin='round' fill='none'/><rect x='37' y='39' width='14' height='7' rx='3.5' fill='%233fb950'/></svg>">
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #2d333b;
@@ -43,6 +44,11 @@
   .chip.busy { color: var(--amber); border-color: var(--amber); }
   .chip.idle { color: var(--green); border-color: var(--green); }
   .chip.waiting { color: var(--accent); border-color: var(--accent); }
+  .chip.stale { color: var(--red); border-color: var(--red); }
+  /* live activity age on busy rows */
+  #sessionList .w.fresh { color: var(--green); }
+  #sessionList .w.quiet { color: var(--amber); }
+  #sessionList .w.stale { color: var(--red); }
 
   main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
@@ -64,6 +70,9 @@
     border-radius: 999px; padding: 0 6px; min-width: 16px; text-align: center;
   }
   .gpill.active { border-color: var(--accent); color: var(--fg); box-shadow: inset 0 0 0 1px var(--accent); }
+  /* at least one busy session hasn't written anything for a while */
+  .gpill.stale .dot { background: var(--red); }
+  .gpill.stale .n { background: var(--red); color: #fff; }
 
   /* ---- session list ---- */
   #sessionList .proj { color: var(--accent); }
@@ -211,7 +220,7 @@
       <option value="claude-haiku-4-5-20251001">🧠 Haiku 4.5 ▾</option>
     </select>
   </div>
-  <span class="chip" id="statusChip" style="display:none">idle</span>
+  <span class="chip" id="statusChip" style="display:none" title="busy · elapsed · ↑output tokens so far — ⚠ silent = no events from even-terminal">idle</span>
   <button id="scrollBtn" style="display:none" title="Follow new messages (tap to jump to the bottom)">⇣</button>
   <button id="archBtn" style="display:none" title="Archive this conversation">🗄</button>
   <button id="stopBtn" style="display:none" title="Interrupt Claude">■</button>
@@ -355,6 +364,13 @@ let turnHadText = false
 let pendingCwd = null        // cwd of a new session awaiting its id
 
 // ---------- header / navigation ----------
+const APP_TITLE = 'Even Terminal — text input'
+// Header title and browser-tab title move together: the session title in
+// session view, the app name elsewhere.
+function setTitle(t) {
+  $('hTitle').textContent = t
+  document.title = t
+}
 function showList() {
   view = 'list'
   current = null
@@ -369,7 +385,7 @@ function showList() {
   $('restartBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = ''
-  $('hTitle').textContent = 'Even Terminal — text input'
+  setTitle(APP_TITLE)
   $('hTitle').removeAttribute('title')
   $('hSub').style.display = 'none'
   $('instSel').style.display = ''
@@ -396,7 +412,7 @@ function showSession(id, title) {
   $('restartBtn').style.display = ''
   $('statusChip').style.display = ''
   $('newBtn').style.display = 'none'
-  $('hTitle').textContent = title || 'New session'
+  setTitle(title || 'New session')
   $('hTitle').title = 'Tap to rename'
   $('instSel').style.display = 'none'
   $('modelSel').style.display = ''
@@ -416,11 +432,70 @@ function showSession(id, title) {
   $('input').focus()
 }
 
+// ---------- liveness ----------
+// "busy" alone can't tell a turn that advances from one that's wedged, so
+// the chip also shows how long the turn has been running, how many output
+// tokens it produced (climbing = progress), and flags silence: even-terminal
+// beats a running_stats every 10s while a turn runs, so 30s without any
+// event means the stream is lost or the instance is stuck.
+const HEARTBEAT_MS = 30_000
+// In the list, the only signal is the transcript's last write (session
+// timestamp). A busy session that hasn't written for 2min is either wedged
+// or inside a very long tool call — worth a look either way.
+const STALE_MS = 120_000
+let chipState = 'idle'
+let turnStart = 0        // when the running turn started (corrected by running_stats)
+let lastEvent = 0        // last SSE event of any kind
+let lastTokens = null    // output tokens so far this turn (from running_stats)
+
 function setChip(state) {
   const c = $('statusChip')
+  if (state === 'busy' && chipState !== 'busy') {
+    turnStart = Date.now(); lastEvent = Date.now(); lastTokens = null
+  }
+  chipState = state
   c.textContent = state
   c.className = 'chip ' + state
+  if (state === 'busy') tickChip()
 }
+
+function fmtAge(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return s + 's'
+  if (s < 3600) return Math.floor(s / 60) + 'm' + String(s % 60).padStart(2, '0')
+  return Math.floor(s / 3600) + 'h' + String(Math.floor((s % 3600) / 60)).padStart(2, '0')
+}
+const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
+
+function tickChip() {
+  if (view !== 'session' || chipState !== 'busy') return
+  const c = $('statusChip')
+  const silent = Date.now() - lastEvent
+  let txt = 'busy · ' + fmtAge(Date.now() - turnStart)
+  if (silent > HEARTBEAT_MS) txt += ' · ⚠ silent ' + fmtAge(silent)
+  else if (lastTokens != null) txt += ' · ↑' + fmtTok(lastTokens)
+  c.textContent = txt
+  c.className = 'chip busy' + (silent > HEARTBEAT_MS ? ' stale' : '')
+}
+
+// List rows: busy sessions carry the transcript's last write on their age
+// span (data-act) and status chip (data-live); one shared 1s ticker keeps
+// them counting between polls.
+function tickAges() {
+  const now = Date.now()
+  for (const el of document.querySelectorAll('[data-act]')) {
+    const age = now - Number(el.dataset.act)
+    el.textContent = 'active ' + fmtAge(age) + ' ago'
+    el.className = 'w ' + (age < 30_000 ? 'fresh' : age < STALE_MS ? 'quiet' : 'stale')
+  }
+  for (const el of document.querySelectorAll('[data-live]')) {
+    const stale = now - Number(el.dataset.live) > STALE_MS
+    el.classList.toggle('stale', stale)
+    el.textContent = stale ? 'stalled?' : 'busy'
+  }
+  tickChip()
+}
+setInterval(tickAges, 1000)
 
 // ---------- instances ----------
 // Active instance = the open session's port in session view, else the scope
@@ -486,7 +561,7 @@ document.addEventListener('visibilitychange', () => {
   loadOverrides().then(() => {
     if (view === 'list') loadSessions()
     else if (view === 'archived') renderArchived()
-    else if (view === 'session' && current && titleMap[current]) $('hTitle').textContent = titleMap[current]
+    else if (view === 'session' && current && titleMap[current]) setTitle(titleMap[current])
   })
 })
 
@@ -510,9 +585,15 @@ async function loadSessions() {
   if (view === 'list') renderList()
 }
 
-function busyCount(port) {
+function busySessions(port) {
   return allSessions.filter((s) =>
-    (port == null || s._port === port) && !archived[s.id] && effStatus(s) === 'busy').length
+    (port == null || s._port === port) && !archived[s.id] && effStatus(s) === 'busy')
+}
+const lastWrite = (s) => new Date(s.timestamp || 0).getTime()
+function busyCount(port) { return busySessions(port).length }
+function stalledCount(port) {
+  const now = Date.now()
+  return busySessions(port).filter((s) => now - lastWrite(s) > STALE_MS).length
 }
 
 function renderList() {
@@ -523,15 +604,18 @@ function renderList() {
   // counts and doubling as the scope filter.
   const bar = document.createElement('div')
   bar.className = 'gbar'
-  const mkPill = (label, key, busy) => {
+  const mkPill = (label, key, port) => {
+    const busy = busyCount(port), stalled = stalledCount(port)
     const p = document.createElement('button')
-    p.className = 'gpill' + (String(scope) === String(key) ? ' active' : '') + (busy ? ' busy' : '')
+    p.className = 'gpill' + (String(scope) === String(key) ? ' active' : '') +
+      (busy ? ' busy' : '') + (stalled ? ' stale' : '')
     p.innerHTML = `<span class="dot"></span>${esc(label)}` + (busy ? `<span class="n">${busy}</span>` : '')
+    if (stalled) p.title = `${stalled} busy session(s) with no transcript write for 2min+`
     p.onclick = () => { scope = String(key); localStorage.setItem('scope', scope); $('instSel').value = scope; showList() }
     return p
   }
-  bar.appendChild(mkPill('All', 'all', busyCount(null)))
-  for (const i of instances) bar.appendChild(mkPill(projName(i), i.port, busyCount(i.port)))
+  bar.appendChild(mkPill('All', 'all', null))
+  for (const i of instances) bar.appendChild(mkPill(projName(i), i.port, i.port))
   box.appendChild(bar)
 
   const scoped = scope === 'all' ? allSessions : allSessions.filter((s) => s._port === Number(scope))
@@ -553,7 +637,13 @@ function renderList() {
       `<button class="kebab" title="Actions">⋯</button>`
     row.querySelector('.t').textContent = dispTitle(s)
     row.querySelector('.w').textContent = when
-    if (st === 'busy') fillLastLine(s, row.querySelector('.pre'))
+    if (st === 'busy') {
+      // live age + stall detection, driven by tickAges()
+      row.querySelector('.w').dataset.act = lastWrite(s)
+      row.querySelector('.chip').dataset.live = lastWrite(s)
+      row.querySelector('.w').title = 'time since the transcript was last written'
+      fillLastLine(s, row.querySelector('.pre'))
+    }
     row.onclick = () => { curPort = s._port; showSession(s.id, dispTitle(s)) }
     row.querySelector('.kebab').onclick = (e) => { e.stopPropagation(); rowMenu(e.currentTarget, s) }
     box.appendChild(row)
@@ -568,6 +658,7 @@ function renderList() {
     f.onclick = showArchived
     box.appendChild(f)
   }
+  tickAges()   // paint the live ages now rather than on the next tick
 }
 
 // Archives view: archived conversations across all instances, read-only
@@ -591,7 +682,7 @@ function showArchived() {
   $('instSel').style.display = 'none'
   $('modelSel').style.display = 'none'
   $('hSub').style.display = 'none'
-  $('hTitle').textContent = 'Archives'
+  setTitle('Archives')
   $('hTitle').removeAttribute('title')
   setHash('#/archived')
   renderArchived()
@@ -984,9 +1075,14 @@ function hideThinking() {
 }
 
 function handle(m) {
+  lastEvent = Date.now()
+  // The replay on connect resends the whole ring buffer, so anything older
+  // than a beat or two is history, not the current turn.
+  const fresh = m.ts == null || Date.now() - m.ts < 15_000
   switch (m.type) {
     case 'user_prompt':
       curAssistant = null; turnHadText = false
+      if (fresh) { turnStart = m.ts || Date.now(); lastTokens = null }
       stamp(bubble('user', m.text), m.ts)
       break
     case 'text_delta':
@@ -1061,7 +1157,15 @@ function handle(m) {
     case 'error': stamp(infoLine('error: ' + m.message, 'err'), m.ts); break
     case 'notification': stamp(infoLine(m.text || m.message || ''), m.ts); break
     case 'task_progress': stamp(infoLine(m.text || m.message || m.status || 'working…'), m.ts); break
-    case 'running_stats': break // too chatty for the UI
+    case 'running_stats':
+      // 10s heartbeat while a turn runs: feeds the chip's elapsed/tokens
+      // rather than the transcript.
+      if (!fresh) break
+      if (chipState !== 'busy') setChip('busy')   // beats only happen mid-turn
+      if (typeof m.durationMs === 'number') turnStart = Date.now() - m.durationMs
+      if (typeof m.outputTokens === 'number') lastTokens = m.outputTokens
+      tickChip()
+      break
   }
 }
 
@@ -1246,7 +1350,7 @@ $('hTitle').onclick = () => {
   const s = allSessions.find((x) => x.id === current)
   const nt = renameSession(current, s && s.title, $('hTitle').textContent)
   if (nt === null) return
-  $('hTitle').textContent = nt
+  setTitle(nt)
   history.replaceState(null, '', `#/${curPort}/${current}/${slug(nt)}`)
 }
 // Archive the open conversation and drop back to the list. Metadata comes

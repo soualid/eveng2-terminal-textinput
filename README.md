@@ -18,6 +18,13 @@ glasses HUD — both see exactly the same sessions.
   tool (even-terminal's API stays text-only)
 - ✅ **Permission and question prompts** answered with buttons, plus an
   interrupt button
+- ⏱ **Liveness feedback**, so you can tell a turn that advances from one
+  that's wedged: in a session the `busy` chip counts the elapsed time and the
+  output tokens produced so far (`busy · 1m12 · ↑2.3k`), and turns red
+  (`⚠ silent 45s`) when even-terminal's 10s heartbeat stops coming; in the
+  list, busy rows show a live "active Ns ago" (green → amber → red) from the
+  transcript's last write, flip to `stalled?` after 2 minutes without one,
+  and the project pill's badge turns red
 - 🔄 **Restart button** for when everything is stuck: the companion kills the
   wedged `even-terminal` process (and its claude subprocesses) and respawns it
   detached with the same command line — sessions live on disk, so the open one
