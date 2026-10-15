@@ -4,6 +4,8 @@
 # under ~/.even-terminal/, so it survives this shell closing.
 #
 #   arte-player  4447  ~/work/arte-player
+#   agents-core  4448  ~/work/ai-agents-core
+#   agents-hub   4449  ~/work/ai-agents-hub
 #   cryptopunks  4444  ~/work/cryptopunks.eth
 #   teamwise     4446  ~/work/teamwise
 #   ui           8790  server.mjs (this repo)
@@ -22,6 +24,8 @@ UI_PORT=8790
 # "name port project-dir" — one even-terminal instance per line
 INSTANCES=(
   "arte-player 4447 $HOME/work/arte-player"
+  "agents-core 4448 $HOME/work/ai-agents-core"
+  "agents-hub  4449 $HOME/work/ai-agents-hub"
   "cryptopunks 4444 $HOME/work/cryptopunks.eth"
   "teamwise    4446 $HOME/work/teamwise"
 )
