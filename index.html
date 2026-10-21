@@ -19,7 +19,7 @@
     --bg: #0d1117; --surface: #151b23; --surface-2: #1d242e; --border: #29313c;
     --fg: #e6edf3; --dim: #8b949e; --accent: #4bb7c3; --accent-fg: #03262b;
     --user: #173b43; --user-fg: #e6f6f8;
-    --green: #3fb950; --red: #f85149; --amber: #d29922;
+    --green: #3fb950; --red: #f85149; --amber: #d29922; --orange: #f0883e;
     --code-bg: rgba(110, 118, 129, .22); --shadow: rgba(0, 0, 0, .4);
     --accent-grad: var(--accent); --art: none;
   }
@@ -28,7 +28,7 @@
     --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3; --border: #dadee4;
     --fg: #1c2128; --dim: #5d6876; --accent: #0b7f8a; --accent-fg: #ffffff;
     --user: #d8eef0; --user-fg: #0f2e33;
-    --green: #1a7f37; --red: #cf222e; --amber: #9a6700;
+    --green: #1a7f37; --red: #cf222e; --amber: #9a6700; --orange: #bc4c00;
     --code-bg: rgba(27, 31, 36, .07); --shadow: rgba(23, 32, 48, .12);
     --accent-grad: var(--accent); --art: none;
   }
@@ -37,7 +37,7 @@
     --bg: #0a0f1f; --surface: #10172c; --surface-2: #172040; --border: #222d52;
     --fg: #d8e1fb; --dim: #7f8bb2; --accent: #7aa2f7; --accent-fg: #0a0f1f;
     --user: #1c2a57; --user-fg: #e3e9ff;
-    --green: #9ece6a; --red: #f7768e; --amber: #e0af68;
+    --green: #9ece6a; --red: #f7768e; --amber: #e0af68; --orange: #ff9e64;
     --code-bg: rgba(122, 162, 247, .13); --shadow: rgba(2, 5, 16, .55);
     --accent-grad: var(--accent); --art: none;
   }
@@ -46,7 +46,7 @@
     --bg: #fdf6e3; --surface: #fffbef; --surface-2: #eee8d5; --border: #e2dbc4;
     --fg: #45585e; --dim: #6c7c7f; --accent: #268bd2; --accent-fg: #fdf6e3;
     --user: #e2ebdb; --user-fg: #2f4a44;
-    --green: #859900; --red: #dc322f; --amber: #b58900;
+    --green: #859900; --red: #dc322f; --amber: #b58900; --orange: #cb4b16;
     --code-bg: rgba(147, 161, 161, .2); --shadow: rgba(88, 110, 117, .16);
     --accent-grad: var(--accent); --art: none;
   }
@@ -55,7 +55,7 @@
     --bg: #fff0f7; --surface: #fff8fc; --surface-2: #ffe0ef; --border: #f6c4dc;
     --fg: #3d0a24; --dim: #94456b; --accent: #e0218a; --accent-fg: #ffffff;
     --user: linear-gradient(135deg, #e0218a, #b5126f); --user-fg: #ffffff;
-    --green: #1f9d55; --red: #d61f45; --amber: #b7791f;
+    --green: #1f9d55; --red: #d61f45; --amber: #b7791f; --orange: #e8590c;
     --code-bg: rgba(224, 33, 138, .09); --shadow: rgba(160, 20, 90, .16);
     --accent-grad: linear-gradient(135deg, #ff69b4, #e0218a 55%, #b5126f);
     --art: radial-gradient(900px 520px at 110% -10%, rgba(255, 105, 180, .18), transparent 60%),
@@ -66,7 +66,7 @@
     --bg: #1e1410; --surface: #2a1c16; --surface-2: #36251c; --border: #4a3327;
     --fg: #f3e6da; --dim: #b49b87; --accent: #d9a066; --accent-fg: #2a1a10;
     --user: #4b2f21; --user-fg: #f8ece0;
-    --green: #9bc472; --red: #e07a5f; --amber: #e8b04a;
+    --green: #9bc472; --red: #e07a5f; --amber: #e8b04a; --orange: #ff8c42;
     --code-bg: rgba(217, 160, 102, .13); --shadow: rgba(10, 5, 2, .55);
     --accent-grad: linear-gradient(135deg, #e8b87a, #c98a4b);
     --art: radial-gradient(900px 520px at 110% -10%, rgba(217, 160, 102, .09), transparent 60%);
@@ -76,7 +76,7 @@
     --bg: #0a0d0a; --surface: #0e140e; --surface-2: #142014; --border: #1f3a1f;
     --fg: #b8f5b0; --dim: #5f9a5f; --accent: #39ff6a; --accent-fg: #031a08;
     --user: #0f2a14; --user-fg: #c8ffc0;
-    --green: #39ff6a; --red: #ff5f56; --amber: #ffbd2e;
+    --green: #39ff6a; --red: #ff5f56; --amber: #ffbd2e; --orange: #ff9f40;
     --code-bg: rgba(57, 255, 106, .09); --shadow: rgba(0, 0, 0, .6);
     --accent-grad: var(--accent);
     --art: repeating-linear-gradient(0deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px);
@@ -187,10 +187,15 @@
   @media (hover: hover) { #sessionList .row:hover { background: var(--surface); } }
   #sessionList .row:active { background: var(--surface-2); }
   #sessionList .row.muted { opacity: .5; }
-  /* hand-set "unfinished" flag: red pill + a red edge on the list row */
+  /* hand-set flags: a colored pill + a colored edge on the list row */
   .flag { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
-    color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
-  #sessionList .row.unfinished { box-shadow: inset 3px 0 0 var(--red); }
+    color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+  .flag.unfinished { --c: var(--red); }
+  .flag.review { --c: var(--orange); }
+  #sessionList .row.flag-unfinished { box-shadow: inset 3px 0 0 var(--red); }
+  #sessionList .row.flag-review { box-shadow: inset 3px 0 0 var(--orange); }
+  #sessionList .row.flag-unfinished.flag-review { box-shadow: inset 3px 0 0 var(--red), inset 6px 0 0 var(--orange); }
+  #flagPills { display: contents; }
   .kebab {
     flex-shrink: 0; border: none; background: none; color: var(--dim);
     padding: 4px 8px; font-size: 18px; line-height: 1;
@@ -342,7 +347,7 @@
     <div class="title" id="hTitle">Even Terminal — text input</div>
     <div class="hmeta">
       <span class="sub" id="hSub" style="display:none"></span>
-      <span class="flag" id="flagPill" style="display:none" title="Flagged unfinished — clear it from the ⋯ menu">🚩 Unfinished</span>
+      <span id="flagPills"></span>
       <select id="instSel"><option>connecting…</option></select>
       <select id="modelSel" style="display:none" title="Model for the next message">
         <option value="">🧠 Opus 4.6 · default ▾</option>
@@ -439,8 +444,12 @@ try {
 // Custom titles: id -> title. even-terminal has no rename API (titles come
 // from the session file), so renames live here and shadow the fetched title.
 let titleMap = JSON.parse(localStorage.getItem('titles') || '{}')
-// "Unfinished" flags set by hand: id -> when it was flagged.
-let unfinished = JSON.parse(localStorage.getItem('unfinished') || '{}')
+// Reminder flags set by hand, one map per kind: id -> when it was flagged.
+const FLAG_KINDS = [
+  { key: 'unfinished', label: '🚩 Unfinished' },
+  { key: 'review', label: '👀 Waiting review' },
+]
+let flags = Object.fromEntries(FLAG_KINDS.map((f) => [f.key, JSON.parse(localStorage.getItem(f.key) || '{}')]))
 
 // Overrides are persisted on the companion (~/.even-terminal/) so every
 // device sees the same archives/titles. localStorage is kept as a cache for
@@ -449,7 +458,7 @@ function cacheOverrides() {
   localStorage.setItem('done', JSON.stringify(doneMap))
   localStorage.setItem('archived', JSON.stringify(archived))
   localStorage.setItem('titles', JSON.stringify(titleMap))
-  localStorage.setItem('unfinished', JSON.stringify(unfinished))
+  for (const f of FLAG_KINDS) localStorage.setItem(f.key, JSON.stringify(flags[f.key]))
 }
 let pushing = 0   // PUTs in flight — pause adoption so a poll can't revert them
 function saveOverrides() {
@@ -457,7 +466,7 @@ function saveOverrides() {
   pushing++
   fetch('/companion/overrides', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ done: doneMap, archived, titles: titleMap, unfinished }),
+    body: JSON.stringify({ done: doneMap, archived, titles: titleMap, ...flags }),
   }).catch(() => { /* offline — the local cache still has it */ })
     .finally(() => pushing--)
 }
@@ -473,7 +482,7 @@ async function loadOverrides() {
       doneMap = { ...doneMap, ...(srv.done || {}) }
       archived = { ...archived, ...(srv.archived || {}) }
       titleMap = { ...titleMap, ...(srv.titles || {}) }
-      unfinished = { ...unfinished, ...(srv.unfinished || {}) }
+      for (const f of FLAG_KINDS) flags[f.key] = { ...flags[f.key], ...(srv[f.key] || {}) }
       localStorage.setItem('overridesSynced', '1')
       saveOverrides()
     } else {
@@ -482,7 +491,7 @@ async function loadOverrides() {
       doneMap = srv.done || {}
       archived = srv.archived || {}
       titleMap = srv.titles || {}
-      unfinished = srv.unfinished || {}
+      for (const f of FLAG_KINDS) flags[f.key] = srv[f.key] || {}
       cacheOverrides()
     }
   } catch { /* companion unreachable — keep the cached copy */ }
@@ -810,14 +819,14 @@ function renderList() {
   for (const s of rows) {
     const st = effStatus(s)
     const row = document.createElement('div')
-    row.className = 'row' + (unfinished[s.id] ? ' unfinished' : '')
+    row.className = 'row' + FLAG_KINDS.filter((f) => flags[f.key][s.id]).map((f) => ' flag-' + f.key).join('')
     const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
     row.innerHTML =
       `<div class="meta"><div class="t"></div>` +
       `<div class="d"><span class="proj">${esc(s._proj)}</span> · <span class="w"></span></div>` +
       (st === 'busy' ? `<div class="pre">…</div>` : '') +
       `</div>` +
-      (unfinished[s.id] ? `<span class="flag" title="Flagged unfinished">🚩 Unfinished</span>` : '') +
+      flagPills(s.id) +
       (st ? `<span class="chip ${esc(st)}">${esc(st)}</span>` : '') +
       `<button class="kebab" title="Actions">⋯</button>`
     row.querySelector('.t').textContent = dispTitle(s)
@@ -933,20 +942,26 @@ function popMenu(anchor, items) {
   document.body.appendChild(m)
   setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }), 0)
 }
-// "Unfinished" flag: a reminder set by hand, shown on the list row and in the
-// session header until cleared.
-function toggleUnfinished(id) {
-  if (unfinished[id]) delete unfinished[id]
-  else unfinished[id] = Date.now()
+// Reminder flags (unfinished, waiting review): set by hand, shown on the list
+// row and in the session header until cleared.
+function toggleFlag(key, id) {
+  if (flags[key][id]) delete flags[key][id]
+  else flags[key][id] = Date.now()
   saveOverrides()
   if (view === 'list') renderList()
   updateFlag()
 }
-function flagItem(id) {
-  return unfinished[id] ? ['✓ Clear unfinished flag', () => toggleUnfinished(id)] : ['🚩 Flag unfinished', () => toggleUnfinished(id)]
+function flagItems(id) {
+  return FLAG_KINDS.map((f) => flags[f.key][id]
+    ? [`✓ Clear "${f.label.replace(/^\S+ /, '')}"`, () => toggleFlag(f.key, id)]
+    : [`${f.label.split(' ')[0]} Flag ${f.label.replace(/^\S+ /, '').toLowerCase()}`, () => toggleFlag(f.key, id)])
+}
+function flagPills(id) {
+  return FLAG_KINDS.filter((f) => flags[f.key][id])
+    .map((f) => `<span class="flag ${f.key}" title="Set by hand — clear it from the ⋯ menu">${f.label}</span>`).join('')
 }
 function updateFlag() {
-  $('flagPill').style.display = view === 'session' && current && unfinished[current] ? '' : 'none'
+  $('flagPills').innerHTML = view === 'session' && current ? flagPills(current) : ''
 }
 
 // Per-row actions: mark a mislabeled session done, rename, archive, restart.
@@ -956,7 +971,7 @@ function rowMenu(anchor, s) {
     items.push(['✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() }])
   }
   items.push(
-    flagItem(s.id),
+    ...flagItems(s.id),
     ['✏️ Rename', () => { if (renameSession(s.id, s.title, dispTitle(s)) !== null) renderList() }],
     ['🗄 Archive', () => {
       archived[s.id] = { title: titleMap[s.id] || s.title || null, proj: s._proj || null, ts: s.timestamp || null }
@@ -1773,7 +1788,7 @@ $('moreBtn').onclick = (e) => {
   e.stopPropagation()
   const items = []
   if (view === 'session') {
-    if (current) items.push(flagItem(current), ['✏️ Rename', renameCurrent], ['🗄 Archive', archiveCurrent])
+    if (current) items.push(...flagItems(current), ['✏️ Rename', renameCurrent], ['🗄 Archive', archiveCurrent])
     items.push(['↻ Reconnect', refresh], ['🔄 Restart even-terminal', () => doRestart(curPort)])
   } else if (view === 'list') {
     items.push(['↻ Refresh', refresh])
