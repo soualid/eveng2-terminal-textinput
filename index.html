@@ -51,16 +51,15 @@
     --accent-grad: var(--accent); --art: none;
   }
   [data-theme="mermaid"] {
-    color-scheme: dark;
-    --bg: #0b1b29; --surface: #10263a; --surface-2: #163049; --border: #22445f;
-    --fg: #e3f6f5; --dim: #8db3bd; --accent: #5fe0cf; --accent-fg: #062a2b;
-    --user: linear-gradient(135deg, rgba(95, 224, 207, .24), rgba(169, 156, 255, .26) 60%, rgba(255, 158, 207, .22));
-    --user-fg: #f2fbfb;
-    --green: #6ee7a8; --red: #ff7a9a; --amber: #ffc978;
-    --code-bg: rgba(95, 224, 207, .12); --shadow: rgba(1, 10, 18, .55);
-    --accent-grad: linear-gradient(135deg, #5fe0cf, #a99cff 55%, #ff9ecf);
-    --art: radial-gradient(900px 520px at 110% -10%, rgba(169, 156, 255, .16), transparent 60%),
-           radial-gradient(800px 480px at -15% 110%, rgba(95, 224, 207, .13), transparent 60%);
+    color-scheme: light;
+    --bg: #fff0f7; --surface: #fff8fc; --surface-2: #ffe0ef; --border: #f6c4dc;
+    --fg: #3d0a24; --dim: #94456b; --accent: #e0218a; --accent-fg: #ffffff;
+    --user: linear-gradient(135deg, #e0218a, #b5126f); --user-fg: #ffffff;
+    --green: #1f9d55; --red: #d61f45; --amber: #b7791f;
+    --code-bg: rgba(224, 33, 138, .09); --shadow: rgba(160, 20, 90, .16);
+    --accent-grad: linear-gradient(135deg, #ff69b4, #e0218a 55%, #b5126f);
+    --art: radial-gradient(900px 520px at 110% -10%, rgba(255, 105, 180, .18), transparent 60%),
+           radial-gradient(800px 480px at -15% 110%, rgba(200, 140, 255, .12), transparent 60%);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
@@ -1610,7 +1609,7 @@ const THEMES = [
   { id: 'light', name: 'Light', sw: 'linear-gradient(135deg, #ffffff 50%, #0b7f8a 50%)' },
   { id: 'night', name: 'Night blue', sw: 'linear-gradient(135deg, #0a0f1f 50%, #7aa2f7 50%)' },
   { id: 'solarized', name: 'Solarized', sw: 'linear-gradient(135deg, #fdf6e3 50%, #268bd2 50%)' },
-  { id: 'mermaid', name: 'Mermaid', sw: 'linear-gradient(135deg, #5fe0cf, #a99cff 55%, #ff9ecf)' },
+  { id: 'mermaid', name: 'Mermaid', sw: 'linear-gradient(135deg, #ff69b4, #e0218a 55%, #b5126f)' },
 ]
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() }
 function setTheme(id) {
