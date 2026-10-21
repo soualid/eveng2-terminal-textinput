@@ -3,8 +3,8 @@
 # patch-package. Removes the 60 s auto-deny on permission prompts and the
 # 120 s auto-skip on user questions (Claude and Codex sessions) so both wait
 # until someone answers; abort/stop still resolves them as denied/skipped.
-# Also lets POST /api/prompt carry an optional `model` field (applied to the
-# Claude session's next run) so the UI can offer a model picker, and stamps
+# Also lets POST /api/prompt carry optional `model` and `effort` fields (applied to the
+# Claude session's next run) so the UI can offer model + reasoning pickers, and stamps
 # every SSE event / history entry with a timestamp (`ts`) so the UI can show
 # when each message happened, even across replays.
 # Re-run after every `npm i -g
@@ -28,4 +28,8 @@ cp -R "$HERE/patches" "$APPROOT/patches"
 
 cd "$APPROOT"
 npx patch-package --error-on-fail
+
+# even-terminal pins the Agent SDK to ^0.2.x, whose bundled Claude Code is too
+# old for recent models ("version 2.1.280 or newer is required"): bump it.
+(cd "$GLOBAL_NM/@evenrealities/even-terminal" && npm i --no-save --omit=dev @anthropic-ai/claude-agent-sdk@0.3.281)
 echo "Patched even-terminal in $GLOBAL_NM — restart running even-terminal instances to pick it up."

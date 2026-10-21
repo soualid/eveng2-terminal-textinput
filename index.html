@@ -27,7 +27,7 @@
   }
   header .title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   header .sub { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #instSel, #modelSel {
+  #instSel, #modelSel, #effortSel {
     display: block; width: 100%; background: none; border: none; padding: 0;
     color: var(--accent); font-size: 12px; font-family: inherit;
   }
@@ -119,6 +119,9 @@
   .bubble.user { background: var(--user); align-self: flex-end; }
   .bubble.assistant { background: var(--panel); align-self: flex-start; }
   .bubble.dim { opacity: .55; }
+  /* latest prompt stays pinned while the reply scrolls under it; capped so a long prompt can't eat the screen */
+  .bubble.user.sticky { position: sticky; top: 0; z-index: 1; opacity: 1; max-height: 30vh; overflow-y: auto;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, .35); }
 
   /* ---- markdown (assistant bubbles) ---- */
   .bubble.md { white-space: normal; }
@@ -216,9 +219,18 @@
       <option value="">🧠 Opus 4.6 · default ▾</option>
       <option value="claude-fable-5-1">🧠 Fable 5.1 ▾</option>
       <option value="claude-fable-5">🧠 Fable 5 ▾</option>
+      <option value="claude-opus-5-5">🧠 Opus 5.5 ▾</option>
       <option value="claude-opus-5">🧠 Opus 5 ▾</option>
       <option value="claude-sonnet-5">🧠 Sonnet 5 ▾</option>
       <option value="claude-haiku-4-5-20251001">🧠 Haiku 4.5 ▾</option>
+    </select>
+    <select id="effortSel" style="display:none" title="Reasoning effort for the next message">
+      <option value="">💭 effort · default ▾</option>
+      <option value="low">💭 effort · low ▾</option>
+      <option value="medium">💭 effort · medium ▾</option>
+      <option value="high">💭 effort · high ▾</option>
+      <option value="xhigh">💭 effort · xhigh ▾</option>
+      <option value="max">💭 effort · max ▾</option>
     </select>
   </div>
   <span class="chip" id="statusChip" style="display:none" title="busy · elapsed · ↑output tokens so far — ⚠ silent = no events from even-terminal">idle</span>
@@ -271,6 +283,8 @@ let scope = localStorage.getItem('scope') || 'all'
 // Model for prompts, applied session-wide by even-terminal on the next
 // message ('' = even-terminal's built-in default). Persisted per device.
 let model = localStorage.getItem('model') || ''
+// Reasoning effort, same lifecycle as model ('' = model's default).
+let effort = localStorage.getItem('effort') || ''
 let allSessions = []         // aggregated sessions, each tagged with _port/_proj
 let curPort = null           // port of the open session (or new-session target)
 let pollTimer = null
@@ -342,6 +356,16 @@ async function loadOverrides() {
 function dispTitle(s) {
   return titleMap[s.id] || s.title || s.id.slice(0, 8)
 }
+// The header title is only read when a session opens; a new session gets its
+// title (first prompt, then Claude's summary) as turns land, so refetch it.
+async function refreshTitle() {
+  const id = current
+  try {
+    const r = await fetch(`/api/sessions?provider=claude&limit=20&_inst=${curPort}`).then((x) => x.json())
+    const s = (r.sessions || []).find((x) => x.id === id)
+    if (s && view === 'session' && current === id) setTitle(dispTitle(s))
+  } catch { /* keep the current title */ }
+}
 // Prompt-based rename shared by the row menu and the session header.
 // Empty input (or the original title) clears the override. Returns the new
 // display title, or null if the user cancelled.
@@ -392,6 +416,7 @@ function showList() {
   $('instSel').style.display = ''
   $('instSel').value = scope
   $('modelSel').style.display = 'none'
+  $('effortSel').style.display = 'none'
   $('main').scrollTop = 0     // coming back from a session: land at the top
   setHash(`#/${scope}`)
   startPolling()
@@ -417,6 +442,7 @@ function showSession(id, title) {
   $('hTitle').title = 'Tap to rename'
   $('instSel').style.display = 'none'
   $('modelSel').style.display = ''
+  $('effortSel').style.display = ''
   $('hSub').style.display = ''
   const inst = currentInst()
   $('hSub').textContent = (id ? id.slice(0, 8) : (pendingCwd || (inst && inst.cwd) || '')) +
@@ -542,6 +568,12 @@ if ($('modelSel').value !== model) { model = ''; $('modelSel').value = '' }   //
 $('modelSel').onchange = () => {
   model = $('modelSel').value
   localStorage.setItem('model', model)
+}
+$('effortSel').value = effort
+if ($('effortSel').value !== effort) { effort = ''; $('effortSel').value = '' }
+$('effortSel').onchange = () => {
+  effort = $('effortSel').value
+  localStorage.setItem('effort', effort)
 }
 
 // Poll the global view so the pill bar stays live while browsing the list.
@@ -682,6 +714,7 @@ function showArchived() {
   $('newBtn').style.display = 'none'
   $('instSel').style.display = 'none'
   $('modelSel').style.display = 'none'
+  $('effortSel').style.display = 'none'
   $('hSub').style.display = 'none'
   setTitle('Archives')
   $('hTitle').removeAttribute('title')
@@ -1009,6 +1042,10 @@ function bubble(cls, text) {
   const b = document.createElement('div')
   b.className = 'bubble ' + cls
   b.textContent = text
+  if (/^user\b/.test(cls)) {
+    $('transcript').querySelectorAll('.sticky').forEach((x) => x.classList.remove('sticky'))
+    b.classList.add('sticky')
+  }
   return addEl(b)
 }
 // Assistant bubble rendered as markdown. _raw keeps the source so streaming
@@ -1153,6 +1190,7 @@ function handle(m) {
         // replaceState: update the URL without retriggering route()
         history.replaceState(null, '', `#/${curPort}/${current}`)
       }
+      if (current) refreshTitle()
       break
     }
     case 'error': stamp(infoLine('error: ' + m.message, 'err'), m.ts); break
@@ -1314,6 +1352,7 @@ async function send() {
   try {
     const body = { text, provider: 'claude' }
     if (model) body.model = model
+    if (effort) body.effort = effort
     if (current) body.sessionId = current
     else if (pendingCwd) body.cwd = pendingCwd
     const r = await post('/api/prompt', body)
