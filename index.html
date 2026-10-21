@@ -86,6 +86,7 @@
   header .title { font-weight: 650; font-size: 15.5px; letter-spacing: -.01em;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 3px; min-width: 0; }
+  header .sub .proj { color: var(--accent); font-weight: 600; }
   header .sub { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hmeta select {
@@ -541,9 +542,7 @@ function showSession(id, title) {
   $('modelSel').style.display = ''
   $('effortSel').style.display = ''
   $('hSub').style.display = ''
-  const inst = currentInst()
-  $('hSub').textContent = (id ? id.slice(0, 8) : (pendingCwd || (inst && inst.cwd) || '')) +
-    (inst ? ` · :${inst.port}` : '')
+  setSub()
   setChip('idle')
   curAssistant = null
   thinkingEl = null   // transcript was cleared with innerHTML above
@@ -554,6 +553,15 @@ function showSession(id, title) {
     attach(id)
   }
   $('input').focus()
+}
+
+// Session subtitle: project · short id · port (a new session shows the
+// directory it will start in).
+function setSub() {
+  const inst = currentInst()
+  const proj = !current && pendingCwd ? shortPath(pendingCwd).split('/').pop() : inst ? projName(inst) : ''
+  $('hSub').innerHTML = [proj && `<span class="proj">${esc(proj)}</span>`,
+    current && esc(current.slice(0, 8)), inst && `:${inst.port}`].filter(Boolean).join(' · ')
 }
 
 // ---------- liveness ----------
@@ -1322,7 +1330,7 @@ function handle(m) {
       // first reply of a brand-new session: grab its id
       if (!current && m.sessionId) {
         current = m.sessionId
-        $('hSub').textContent = current.slice(0, 8)
+        setSub()
         // replaceState: update the URL without retriggering route()
         history.replaceState(null, '', `#/${curPort}/${current}`)
       }
@@ -1494,7 +1502,7 @@ async function send() {
     const r = await post('/api/prompt', body)
     if (!current && r.sessionId) {
       current = r.sessionId
-      $('hSub').textContent = current.slice(0, 8)
+      setSub()
       history.replaceState(null, '', `#/${curPort}/${current}`)
       openStream(current)   // SSE replay will replay user_prompt
     } else if (!es) {
