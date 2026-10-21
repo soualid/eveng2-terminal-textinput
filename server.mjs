@@ -298,7 +298,7 @@ const server = createServer((req, res) => {
       try {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
         const pick = (k) => (body && typeof body[k] === 'object' && body[k]) || {}
-        const state = { done: pick('done'), archived: pick('archived'), titles: pick('titles') }
+        const state = { done: pick('done'), archived: pick('archived'), titles: pick('titles'), unfinished: pick('unfinished') }
         mkdirSync(dirname(STATE_FILE), { recursive: true })
         // Atomic write so a crash mid-write can't corrupt the state file.
         writeFileSync(STATE_FILE + '.tmp', JSON.stringify(state))

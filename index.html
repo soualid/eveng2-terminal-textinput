@@ -187,6 +187,10 @@
   @media (hover: hover) { #sessionList .row:hover { background: var(--surface); } }
   #sessionList .row:active { background: var(--surface-2); }
   #sessionList .row.muted { opacity: .5; }
+  /* hand-set "unfinished" flag: red pill + a red edge on the list row */
+  .flag { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+    color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+  #sessionList .row.unfinished { box-shadow: inset 3px 0 0 var(--red); }
   .kebab {
     flex-shrink: 0; border: none; background: none; color: var(--dim);
     padding: 4px 8px; font-size: 18px; line-height: 1;
@@ -338,6 +342,7 @@
     <div class="title" id="hTitle">Even Terminal — text input</div>
     <div class="hmeta">
       <span class="sub" id="hSub" style="display:none"></span>
+      <span class="flag" id="flagPill" style="display:none" title="Flagged unfinished — clear it from the ⋯ menu">🚩 Unfinished</span>
       <select id="instSel"><option>connecting…</option></select>
       <select id="modelSel" style="display:none" title="Model for the next message">
         <option value="">🧠 Opus 4.6 · default ▾</option>
@@ -434,6 +439,8 @@ try {
 // Custom titles: id -> title. even-terminal has no rename API (titles come
 // from the session file), so renames live here and shadow the fetched title.
 let titleMap = JSON.parse(localStorage.getItem('titles') || '{}')
+// "Unfinished" flags set by hand: id -> when it was flagged.
+let unfinished = JSON.parse(localStorage.getItem('unfinished') || '{}')
 
 // Overrides are persisted on the companion (~/.even-terminal/) so every
 // device sees the same archives/titles. localStorage is kept as a cache for
@@ -442,6 +449,7 @@ function cacheOverrides() {
   localStorage.setItem('done', JSON.stringify(doneMap))
   localStorage.setItem('archived', JSON.stringify(archived))
   localStorage.setItem('titles', JSON.stringify(titleMap))
+  localStorage.setItem('unfinished', JSON.stringify(unfinished))
 }
 let pushing = 0   // PUTs in flight — pause adoption so a poll can't revert them
 function saveOverrides() {
@@ -449,7 +457,7 @@ function saveOverrides() {
   pushing++
   fetch('/companion/overrides', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ done: doneMap, archived, titles: titleMap }),
+    body: JSON.stringify({ done: doneMap, archived, titles: titleMap, unfinished }),
   }).catch(() => { /* offline — the local cache still has it */ })
     .finally(() => pushing--)
 }
@@ -465,6 +473,7 @@ async function loadOverrides() {
       doneMap = { ...doneMap, ...(srv.done || {}) }
       archived = { ...archived, ...(srv.archived || {}) }
       titleMap = { ...titleMap, ...(srv.titles || {}) }
+      unfinished = { ...unfinished, ...(srv.unfinished || {}) }
       localStorage.setItem('overridesSynced', '1')
       saveOverrides()
     } else {
@@ -473,6 +482,7 @@ async function loadOverrides() {
       doneMap = srv.done || {}
       archived = srv.archived || {}
       titleMap = srv.titles || {}
+      unfinished = srv.unfinished || {}
       cacheOverrides()
     }
   } catch { /* companion unreachable — keep the cached copy */ }
@@ -539,6 +549,7 @@ function showList() {
   $('newBtn').style.display = ''
   setPromptBar('')
   updateAttention()
+  updateFlag()
   setTitle(APP_TITLE)
   $('hTitle').removeAttribute('title')
   $('hSub').style.display = 'none'
@@ -582,6 +593,7 @@ function showSession(id, title) {
   toolEls.clear()
   stick = true        // always land at the bottom when joining a session
   updateScrollBtn()
+  updateFlag()
   if (id) {
     setHash(`#/${curPort}/${id}${title ? '/' + slug(title) : ''}`)
     attach(id)
@@ -733,7 +745,7 @@ document.addEventListener('visibilitychange', () => {
   loadOverrides().then(() => {
     if (view === 'list') loadSessions()
     else if (view === 'archived') renderArchived()
-    else if (view === 'session' && current && titleMap[current]) setTitle(titleMap[current])
+    else if (view === 'session' && current) { if (titleMap[current]) setTitle(titleMap[current]); updateFlag() }
   })
 })
 
@@ -798,13 +810,14 @@ function renderList() {
   for (const s of rows) {
     const st = effStatus(s)
     const row = document.createElement('div')
-    row.className = 'row'
+    row.className = 'row' + (unfinished[s.id] ? ' unfinished' : '')
     const when = s.timestamp ? relTime(new Date(s.timestamp)) : ''
     row.innerHTML =
       `<div class="meta"><div class="t"></div>` +
       `<div class="d"><span class="proj">${esc(s._proj)}</span> · <span class="w"></span></div>` +
       (st === 'busy' ? `<div class="pre">…</div>` : '') +
       `</div>` +
+      (unfinished[s.id] ? `<span class="flag" title="Flagged unfinished">🚩 Unfinished</span>` : '') +
       (st ? `<span class="chip ${esc(st)}">${esc(st)}</span>` : '') +
       `<button class="kebab" title="Actions">⋯</button>`
     row.querySelector('.t').textContent = dispTitle(s)
@@ -855,6 +868,7 @@ function showArchived() {
   $('hSub').style.display = 'none'
   setPromptBar('')
   updateAttention()
+  updateFlag()
   setTitle('Archives')
   $('hTitle').removeAttribute('title')
   setHash('#/archived')
@@ -919,6 +933,22 @@ function popMenu(anchor, items) {
   document.body.appendChild(m)
   setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }), 0)
 }
+// "Unfinished" flag: a reminder set by hand, shown on the list row and in the
+// session header until cleared.
+function toggleUnfinished(id) {
+  if (unfinished[id]) delete unfinished[id]
+  else unfinished[id] = Date.now()
+  saveOverrides()
+  if (view === 'list') renderList()
+  updateFlag()
+}
+function flagItem(id) {
+  return unfinished[id] ? ['✓ Clear unfinished flag', () => toggleUnfinished(id)] : ['🚩 Flag unfinished', () => toggleUnfinished(id)]
+}
+function updateFlag() {
+  $('flagPill').style.display = view === 'session' && current && unfinished[current] ? '' : 'none'
+}
+
 // Per-row actions: mark a mislabeled session done, rename, archive, restart.
 function rowMenu(anchor, s) {
   const items = []
@@ -926,6 +956,7 @@ function rowMenu(anchor, s) {
     items.push(['✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() }])
   }
   items.push(
+    flagItem(s.id),
     ['✏️ Rename', () => { if (renameSession(s.id, s.title, dispTitle(s)) !== null) renderList() }],
     ['🗄 Archive', () => {
       archived[s.id] = { title: titleMap[s.id] || s.title || null, proj: s._proj || null, ts: s.timestamp || null }
@@ -1742,7 +1773,7 @@ $('moreBtn').onclick = (e) => {
   e.stopPropagation()
   const items = []
   if (view === 'session') {
-    if (current) items.push(['✏️ Rename', renameCurrent], ['🗄 Archive', archiveCurrent])
+    if (current) items.push(flagItem(current), ['✏️ Rename', renameCurrent], ['🗄 Archive', archiveCurrent])
     items.push(['↻ Reconnect', refresh], ['🔄 Restart even-terminal', () => doRestart(curPort)])
   } else if (view === 'list') {
     items.push(['↻ Refresh', refresh])
