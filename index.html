@@ -518,7 +518,7 @@ const APP_TITLE = 'Even Terminal — text input'
 // session view, the app name elsewhere.
 function setTitle(t) {
   $('hTitle').textContent = t
-  document.title = t
+  document.title = (blinkTimer ? '❓ ' : '') + t
 }
 function showList() {
   view = 'list'
@@ -533,6 +533,7 @@ function showList() {
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = ''
   setPromptBar('')
+  updateAttention()
   setTitle(APP_TITLE)
   $('hTitle').removeAttribute('title')
   $('hSub').style.display = 'none'
@@ -560,6 +561,8 @@ function showSession(id, title) {
   $('statusChip').style.display = ''
   $('newBtn').style.display = 'none'
   setPromptBar('')
+  permCards.length = 0   // cards of the previous transcript are gone
+  updateAttention()
   setTitle(title || 'New session')
   $('hTitle').title = 'Tap to rename'
   $('instSel').style.display = 'none'
@@ -844,6 +847,7 @@ function showArchived() {
   $('effortSel').style.display = 'none'
   $('hSub').style.display = 'none'
   setPromptBar('')
+  updateAttention()
   setTitle('Archives')
   $('hTitle').removeAttribute('title')
   setHash('#/archived')
@@ -1266,6 +1270,27 @@ function openStream(id) {
 const toolEls = new Map()
 const permCards = []
 
+// While a question or permission waits for an answer, the tab icon blinks
+// to an amber "?" and the tab title gets a ❓, so a background tab shows it.
+const FAVICON = document.querySelector('link[rel=icon]').href
+const ASK_ICON = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23f0a020'/><text x='32' y='47' font-size='44' font-weight='800' text-anchor='middle' fill='%230d1117' font-family='system-ui,sans-serif'>?</text></svg>"
+let blinkTimer = null
+function updateAttention() {
+  const on = view === 'session' && permCards.length > 0
+  if (on === !!blinkTimer) return
+  const link = document.querySelector('link[rel=icon]')
+  if (on) {
+    link.href = ASK_ICON
+    let ask = true
+    blinkTimer = setInterval(() => { ask = !ask; link.href = ask ? ASK_ICON : FAVICON }, 700)
+  } else {
+    clearInterval(blinkTimer)
+    blinkTimer = null
+    link.href = FAVICON
+  }
+  setTitle($('hTitle').textContent)
+}
+
 // Transient "thinking…" indicator: even-terminal only signals think_start /
 // think_end status events (it never streams thinking content), so all we can
 // show is that Claude is reasoning.
@@ -1344,6 +1369,7 @@ function handle(m) {
       break
     case 'result': {
       hideThinking()
+      finishCards()
       curAssistant = null
       if (!turnHadText && m.text) stamp(mdBubble('assistant', m.text), m.ts)
       const r = document.createElement('div')
@@ -1381,6 +1407,7 @@ function finishCards() {
     c.classList.add('done')
     c.querySelectorAll('button').forEach((b) => (b.disabled = true))
   }
+  updateAttention()
 }
 
 function permissionCard(m) {
@@ -1397,6 +1424,7 @@ function permissionCard(m) {
     opts.appendChild(b)
   }
   permCards.push(card)
+  updateAttention()
   addEl(stamp(card, m.ts))
 }
 
@@ -1426,6 +1454,7 @@ function questionCard(m) {
     card.append(h, p, opts)
   }
   permCards.push(card)
+  updateAttention()
   addEl(stamp(card, m.ts))
 }
 
