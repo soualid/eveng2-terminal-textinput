@@ -1,5 +1,5 @@
 diff --git a/node_modules/@evenrealities/even-terminal/dist/claude/provider.js b/node_modules/@evenrealities/even-terminal/dist/claude/provider.js
-index e4a0172..32b7de9 100644
+index e4a0172..51581a0 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/claude/provider.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/claude/provider.js
 @@ -17,13 +17,10 @@ function findSessionFile(sessionId) {
@@ -102,7 +102,15 @@ index e4a0172..32b7de9 100644
          // Emit user_prompt when session ID is known
          session.onIdReady((sid) => {
              emit(sid, { type: "user_prompt", text });
-@@ -219,7 +233,7 @@ export function createClaudeProvider(emit) {
+@@ -212,14 +226,14 @@ export function createClaudeProvider(emit) {
+             provider: "claude",
+         };
+     }
+-    const MAX_HISTORY_ITEMS = 10;
++    const MAX_HISTORY_ITEMS = 200;
+     async function getHistory(sessionId, limit) {
+         const messages = await getSessionMessages(sessionId);
+         let reduced = messages.reduce(function (acc, msg) {
              const contents = msg.message?.content;
              for (let content of contents) {
                  if (content?.type === "text") {
@@ -112,7 +120,7 @@ index e4a0172..32b7de9 100644
              }
              return acc;
 diff --git a/node_modules/@evenrealities/even-terminal/dist/claude/session.js b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
-index a98fa8d..e3c4851 100644
+index a98fa8d..e01bcc0 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/claude/session.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/claude/session.js
 @@ -74,6 +74,8 @@ export class ClaudeSession {
@@ -201,7 +209,7 @@ index 5280b23..b1198c8 100644
          this.send({
              type: "permission_request",
 diff --git a/node_modules/@evenrealities/even-terminal/dist/routes/core.js b/node_modules/@evenrealities/even-terminal/dist/routes/core.js
-index 95df406..54a5857 100644
+index 95df406..70b595e 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/routes/core.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/routes/core.js
 @@ -105,7 +105,7 @@ router.get("/update-check", async (_req, res) => {
@@ -222,10 +230,28 @@ index 95df406..54a5857 100644
          res.status(202).json({ ok: true, sessionId: result.sessionId, provider: result.provider });
      }
      catch (err) {
+@@ -251,7 +251,7 @@ router.get("/debug/status/:id", async (req, res) => {
+ // GET /api/sessions/:id/history
+ router.get("/sessions/:id/history", async (req, res) => {
+     const id = req.params.id;
+-    const limit = Math.min(parseInt(req.query.limit) || 10, 10);
++    const limit = Math.min(parseInt(req.query.limit) || 10, 200);
+     const providerName = req.query.provider || getDefaultProvider();
+     const provider = getProvider(providerName);
+     try {
 diff --git a/node_modules/@evenrealities/even-terminal/dist/routes/events.js b/node_modules/@evenrealities/even-terminal/dist/routes/events.js
-index d87c6b1..9e304e4 100644
+index d87c6b1..66407c3 100644
 --- a/node_modules/@evenrealities/even-terminal/dist/routes/events.js
 +++ b/node_modules/@evenrealities/even-terminal/dist/routes/events.js
+@@ -2,7 +2,7 @@ import { Router } from "express";
+ import { writeToLogFile } from "../logger.js";
+ const router = Router();
+ // ── Per-session message ring buffer + SSE clients ────
+-const MAX_MESSAGES_PER_SESSION = 500;
++const MAX_MESSAGES_PER_SESSION = 5000;
+ const sessions = new Map();
+ function getSession(sessionId) {
+     let s = sessions.get(sessionId);
 @@ -15,6 +15,8 @@ function getSession(sessionId) {
  export function pushMessage(sessionId, msg) {
      const s = getSession(sessionId);

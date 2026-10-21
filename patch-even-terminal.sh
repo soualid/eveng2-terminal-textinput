@@ -6,7 +6,9 @@
 # Also lets POST /api/prompt carry optional `model` and `effort` fields (applied to the
 # Claude session's next run) so the UI can offer model + reasoning pickers, and stamps
 # every SSE event / history entry with a timestamp (`ts`) so the UI can show
-# when each message happened, even across replays.
+# when each message happened, even across replays. Raises the per-session SSE
+# replay buffer (500 → 5000 events: one per streamed chunk, so 500 was barely a
+# turn) and the on-disk history cap (10 → 200 messages).
 # Re-run after every `npm i -g
 # @evenrealities/even-terminal` — a version bump needs the patch regenerated
 # (patches/ is pinned to the version in its filename).

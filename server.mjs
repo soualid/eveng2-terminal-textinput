@@ -13,7 +13,7 @@
 //          instance when several are running)
 
 import { createServer, request } from 'node:http'
-import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync, renameSync, openSync, closeSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync, renameSync, openSync, closeSync, existsSync } from 'node:fs'
 import { homedir, networkInterfaces, tmpdir } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,6 +25,11 @@ const MAX_UPLOAD = 16 * 1024 * 1024   // 16 MB
 // on the host so every device sees the same thing.
 const STATE_FILE = join(homedir(), '.even-terminal', 'textinput-overrides.json')
 const MAX_STATE = 1024 * 1024   // 1 MB
+
+// Claude Code transcripts (~/.claude/projects/<project>/<sessionId>.jsonl):
+// the full history, whereas even-terminal only keeps a short window in memory.
+const PROJECTS_DIR = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INSTANCE_DIR = join(homedir(), '.even-terminal', 'instances')
@@ -188,6 +193,47 @@ async function restartInstance(port) {
   return { status: 504, body: { error: `even-terminal did not come back on port ${port} — see ${logPath}` } }
 }
 
+// One-line label for a tool call, like even-terminal's tool_end summary.
+function toolSummary(name, input = {}) {
+  const hint = input.description || input.file_path || input.pattern || input.url || input.query || input.command || input.prompt || ''
+  return `${name} ${String(hint).split('\n')[0]}`.trim().slice(0, 90)
+}
+
+// Main-chain transcript of a session: user/assistant text, and tool calls with
+// their (clipped) input and output. lastTs is the newest entry's timestamp, so
+// the UI can drop the part of even-terminal's replay that it already shows.
+function sessionHistory(id) {
+  const dir = readdirSync(PROJECTS_DIR).find((d) => existsSync(join(PROJECTS_DIR, d, id + '.jsonl')))
+  if (!dir) return null
+  const clip = (s, n = 2000) => (s.length > n ? s.slice(0, n) + '…' : s)
+  const items = []
+  const tools = new Map()
+  let lastTs = null
+  for (const line of readFileSync(join(PROJECTS_DIR, dir, id + '.jsonl'), 'utf8').split('\n')) {
+    let e
+    try { e = JSON.parse(line) } catch { continue }
+    if ((e.type !== 'user' && e.type !== 'assistant') || e.isSidechain) continue
+    if (e.timestamp) lastTs = e.timestamp
+    if (e.isMeta || e.isCompactSummary) continue
+    const c = e.message?.content
+    for (const b of typeof c === 'string' ? [{ type: 'text', text: c }] : Array.isArray(c) ? c : []) {
+      if (b.type === 'text' && b.text?.trim()) {
+        // slash-command plumbing and injected reminders aren't part of the conversation
+        if (e.type === 'user' && /^\s*<(command-|local-command-|system-reminder|bash-)/.test(b.text)) continue
+        items.push({ kind: e.type, text: b.text, ts: e.timestamp })
+      } else if (b.type === 'tool_use') {
+        const t = { kind: 'tool', id: b.id, summary: toolSummary(b.name, b.input), input: clip(JSON.stringify(b.input ?? {}, null, 1)), ts: e.timestamp }
+        tools.set(b.id, t)
+        items.push(t)
+      } else if (b.type === 'tool_result' && tools.has(b.tool_use_id)) {
+        const out = typeof b.content === 'string' ? b.content : (b.content || []).map((x) => x.text || '').join('\n')
+        Object.assign(tools.get(b.tool_use_id), { output: clip(out), done: true })
+      }
+    }
+  }
+  return { items, lastTs }
+}
+
 const server = createServer((req, res) => {
   const url = req.url ?? '/'
 
@@ -208,6 +254,23 @@ const server = createServer((req, res) => {
     sendJson(res, 200, findInstances().map((i) => ({
       pid: i.pid, port: i.port, cwd: i.cwd, startedAt: i.startedAt,
     })))
+    return
+  }
+
+  // Full transcript of one session, read from Claude Code's .jsonl
+  if (req.method === 'GET' && url.startsWith('/companion/history?')) {
+    const id = new URL(url, 'http://x').searchParams.get('id') || ''
+    if (!SESSION_ID.test(id)) {   // also keeps the id from walking out of PROJECTS_DIR
+      sendJson(res, 400, { error: 'Invalid session id' })
+      return
+    }
+    try {
+      const h = sessionHistory(id)
+      if (h) sendJson(res, 200, h)
+      else sendJson(res, 404, { error: 'Transcript not found' })
+    } catch (err) {
+      sendJson(res, 500, { error: err.message })
+    }
     return
   }
 
