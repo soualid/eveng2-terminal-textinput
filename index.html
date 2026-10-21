@@ -120,8 +120,9 @@
   .bubble.assistant { background: var(--panel); align-self: flex-start; }
   .bubble.dim { opacity: .55; }
   /* latest prompt stays pinned while the reply scrolls under it; capped so a long prompt can't eat the screen */
-  .bubble.user.sticky { position: sticky; top: 0; z-index: 1; opacity: 1; max-height: 30vh; overflow-y: auto;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, .35); }
+  .bubble.user.sticky { position: sticky; top: 8px; z-index: 1; opacity: 1; max-height: 30vh; overflow-y: auto;
+    /* cartouche: a ring of page background masks the text scrolling behind, then fades out below */
+    box-shadow: 0 0 0 8px var(--bg), 0 10px 18px 8px var(--bg), 0 6px 20px 8px rgba(0, 0, 0, .5); }
 
   /* ---- markdown (assistant bubbles) ---- */
   .bubble.md { white-space: normal; }
