@@ -5,46 +5,121 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#151b23">
+<script>
+  // theme before first paint (no flash); falls back to the OS light/dark preference
+  try { document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') } catch {}
+</script>
 <title>Even Terminal — text input</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d1117'/><path d='M17 20l16 12-16 12' stroke='%234bb7c3' stroke-width='7' stroke-linecap='round' stroke-linejoin='round' fill='none'/><rect x='37' y='39' width='14' height='7' rx='3.5' fill='%233fb950'/></svg>">
 <style>
-  :root {
-    --bg: #0d1117; --panel: #161b22; --border: #2d333b;
-    --fg: #e6edf3; --dim: #8b949e; --accent: #4bb7c3;
-    --user: #1f3d45; --green: #3fb950; --red: #f85149; --amber: #d29922;
+  /* ---- themes: every color is a token, [data-theme] on <html> swaps the set ---- */
+  :root, [data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0d1117; --surface: #151b23; --surface-2: #1d242e; --border: #29313c;
+    --fg: #e6edf3; --dim: #8b949e; --accent: #4bb7c3; --accent-fg: #03262b;
+    --user: #173b43; --user-fg: #e6f6f8;
+    --green: #3fb950; --red: #f85149; --amber: #d29922;
+    --code-bg: rgba(110, 118, 129, .22); --shadow: rgba(0, 0, 0, .4);
+    --accent-grad: var(--accent); --art: none;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3; --border: #dadee4;
+    --fg: #1c2128; --dim: #5d6876; --accent: #0b7f8a; --accent-fg: #ffffff;
+    --user: #d8eef0; --user-fg: #0f2e33;
+    --green: #1a7f37; --red: #cf222e; --amber: #9a6700;
+    --code-bg: rgba(27, 31, 36, .07); --shadow: rgba(23, 32, 48, .12);
+    --accent-grad: var(--accent); --art: none;
+  }
+  [data-theme="night"] {
+    color-scheme: dark;
+    --bg: #0a0f1f; --surface: #10172c; --surface-2: #172040; --border: #222d52;
+    --fg: #d8e1fb; --dim: #7f8bb2; --accent: #7aa2f7; --accent-fg: #0a0f1f;
+    --user: #1c2a57; --user-fg: #e3e9ff;
+    --green: #9ece6a; --red: #f7768e; --amber: #e0af68;
+    --code-bg: rgba(122, 162, 247, .13); --shadow: rgba(2, 5, 16, .55);
+    --accent-grad: var(--accent); --art: none;
+  }
+  [data-theme="solarized"] {
+    color-scheme: light;
+    --bg: #fdf6e3; --surface: #fffbef; --surface-2: #eee8d5; --border: #e2dbc4;
+    --fg: #45585e; --dim: #6c7c7f; --accent: #268bd2; --accent-fg: #fdf6e3;
+    --user: #e2ebdb; --user-fg: #2f4a44;
+    --green: #859900; --red: #dc322f; --amber: #b58900;
+    --code-bg: rgba(147, 161, 161, .2); --shadow: rgba(88, 110, 117, .16);
+    --accent-grad: var(--accent); --art: none;
+  }
+  [data-theme="mermaid"] {
+    color-scheme: dark;
+    --bg: #0b1b29; --surface: #10263a; --surface-2: #163049; --border: #22445f;
+    --fg: #e3f6f5; --dim: #8db3bd; --accent: #5fe0cf; --accent-fg: #062a2b;
+    --user: linear-gradient(135deg, rgba(95, 224, 207, .24), rgba(169, 156, 255, .26) 60%, rgba(255, 158, 207, .22));
+    --user-fg: #f2fbfb;
+    --green: #6ee7a8; --red: #ff7a9a; --amber: #ffc978;
+    --code-bg: rgba(95, 224, 207, .12); --shadow: rgba(1, 10, 18, .55);
+    --accent-grad: linear-gradient(135deg, #5fe0cf, #a99cff 55%, #ff9ecf);
+    --art: radial-gradient(900px 520px at 110% -10%, rgba(169, 156, 255, .16), transparent 60%),
+           radial-gradient(800px 480px at -15% 110%, rgba(95, 224, 207, .13), transparent 60%);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
   html, body { height: 100%; }
   body {
-    background: var(--bg); color: var(--fg);
-    font: 15px/1.45 -apple-system, "SF Pro Text", system-ui, sans-serif;
+    background: var(--art), var(--bg); color: var(--fg);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
     height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
   }
+  ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ico { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- header ---- */
   header {
-    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
-    background: var(--panel); border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    padding: calc(env(safe-area-inset-top) + 8px) 10px 8px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 4px; flex-shrink: 0;
   }
-  header .title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  header .sub { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #instSel, #modelSel, #effortSel {
-    display: block; width: 100%; background: none; border: none; padding: 0;
-    color: var(--accent); font-size: 12px; font-family: inherit;
+  .htext { flex: 1; min-width: 0; padding: 0 6px; }
+  header .title { font-weight: 650; font-size: 15.5px; letter-spacing: -.01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 3px; min-width: 0; }
+  header .sub { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hmeta select {
+    appearance: none; -webkit-appearance: none; max-width: 100%; cursor: pointer; field-sizing: content;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+    color: var(--fg); font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1.2; padding: 3px 9px;
   }
+
+  /* ---- buttons ---- */
   button {
-    background: var(--panel); color: var(--fg); border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 12px; font-size: 14px; cursor: pointer;
+    background: var(--surface-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 12px; font-family: inherit; font-size: 14px; cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    transition: background-color .15s, border-color .15s, color .15s, transform .1s;
   }
-  button:active { background: var(--border); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #06262b; font-weight: 600; }
-  button:disabled { opacity: .45; }
-  .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--dim); flex-shrink: 0; }
-  #scrollBtn.on { color: var(--accent); border-color: var(--accent); }
-  .chip.busy { color: var(--amber); border-color: var(--amber); }
-  .chip.idle { color: var(--green); border-color: var(--green); }
-  .chip.waiting { color: var(--accent); border-color: var(--accent); }
-  .chip.stale { color: var(--red); border-color: var(--red); }
+  button:active { transform: scale(.97); }
+  button.primary { background: var(--accent-grad); border-color: transparent; color: var(--accent-fg); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; transform: none; }
+  button.icon { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; flex-shrink: 0;
+    background: none; border-color: transparent; color: var(--dim); }
+  button.icon.primary { background: var(--accent-grad); color: var(--accent-fg); }
+  #scrollBtn.on { color: var(--accent); }
+  @media (hover: hover) {
+    button:not(.icon):not(.primary):hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+    button.icon:not(.primary):hover { background: var(--surface-2); color: var(--fg); }
+    button.primary:hover { filter: brightness(1.08); }
+  }
+
+  .chip { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; flex-shrink: 0; white-space: nowrap;
+    font-variant-numeric: tabular-nums; color: var(--dim); background: color-mix(in srgb, var(--dim) 15%, transparent); }
+  .chip.busy { color: var(--amber); background: color-mix(in srgb, var(--amber) 15%, transparent); }
+  .chip.idle { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+  .chip.waiting { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .chip.stale { color: var(--red); background: color-mix(in srgb, var(--red) 15%, transparent); }
   /* live activity age on busy rows */
   #sessionList .w.fresh { color: var(--green); }
   #sessionList .w.quiet { color: var(--amber); }
@@ -54,147 +129,169 @@
 
   /* ---- global bar ---- */
   .gbar {
-    display: flex; gap: 8px; padding: 12px 14px; overflow-x: auto;
+    display: flex; gap: 8px; padding: 12px 14px; overflow-x: auto; scrollbar-width: none;
     border-bottom: 1px solid var(--border); -webkit-overflow-scrolling: touch;
   }
   .gpill {
-    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-    padding: 6px 11px; border-radius: 999px; font-size: 13px;
-    border: 1px solid var(--border); background: var(--bg); color: var(--dim);
+    display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 500;
+    border: 1px solid var(--border); background: var(--surface); color: var(--dim);
   }
   .gpill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-  .gpill.busy { color: var(--fg); border-color: var(--amber); }
+  .gpill.busy { color: var(--fg); border-color: color-mix(in srgb, var(--amber) 60%, var(--border)); }
   .gpill.busy .dot { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
   .gpill .n {
-    font-size: 11px; font-weight: 600; color: #06262b; background: var(--amber);
-    border-radius: 999px; padding: 0 6px; min-width: 16px; text-align: center;
+    font-size: 11px; font-weight: 700; color: var(--bg); background: var(--amber);
+    border-radius: 999px; padding: 0 6px; min-width: 18px; text-align: center;
   }
-  .gpill.active { border-color: var(--accent); color: var(--fg); box-shadow: inset 0 0 0 1px var(--accent); }
+  .gpill.active { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 13%, var(--surface)); }
   /* at least one busy session hasn't written anything for a while */
   .gpill.stale .dot { background: var(--red); }
   .gpill.stale .n { background: var(--red); color: #fff; }
 
   /* ---- session list ---- */
-  #sessionList .proj { color: var(--accent); }
+  #sessionList .proj { color: var(--accent); font-weight: 500; }
   #sessionList .pre {
     color: var(--amber); font-size: 12px; margin-top: 3px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #sessionList .row {
-    padding: 13px 14px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    padding: 13px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; cursor: pointer; transition: background-color .15s;
   }
-  #sessionList .row:active { background: var(--panel); }
-  #sessionList .row.muted { opacity: .4; }
+  @media (hover: hover) { #sessionList .row:hover { background: var(--surface); } }
+  #sessionList .row:active { background: var(--surface-2); }
+  #sessionList .row.muted { opacity: .5; }
   .kebab {
     flex-shrink: 0; border: none; background: none; color: var(--dim);
-    padding: 4px 6px; font-size: 18px; line-height: 1;
+    padding: 4px 8px; font-size: 18px; line-height: 1;
   }
-  .kebab:active { background: var(--border); }
   .unarch { flex-shrink: 0; font-size: 12px; padding: 6px 10px; color: var(--accent); }
   .menu {
-    position: fixed; z-index: 50; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 10px; padding: 4px;
-    display: flex; flex-direction: column; min-width: 150px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+    position: fixed; z-index: 50; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 14px; padding: 6px;
+    display: flex; flex-direction: column; min-width: 210px; max-height: calc(100dvh - 90px); overflow-y: auto;
+    box-shadow: 0 14px 36px var(--shadow); transform-origin: top right; animation: pop .14s ease-out;
   }
+  @keyframes pop { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
   .menu button {
-    text-align: left; border: none; background: none; color: var(--fg);
-    padding: 10px 12px; border-radius: 6px; font-size: 14px;
+    display: flex; align-items: center; gap: 10px; text-align: left; border: none; background: none;
+    color: var(--fg); padding: 9px 10px; border-radius: 8px; font-size: 14px;
   }
-  .menu button:active { background: var(--border); }
+  .menu button:active, .menu button:hover { background: var(--surface-2); }
+  .menu button.on::after { content: '✓'; margin-left: auto; color: var(--accent); font-weight: 700; }
+  .menu hr { border: none; border-top: 1px solid var(--border); margin: 5px 4px; }
+  .menu .lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); padding: 6px 10px 3px; }
+  .sw { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px var(--border); }
   .footer {
     padding: 14px; text-align: center; color: var(--accent);
-    font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 1px solid var(--border);
   }
-  .footer:active { background: var(--panel); }
+  .footer:active { background: var(--surface); }
   #sessionList .meta { flex: 1; min-width: 0; }
-  #sessionList .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #sessionList .d { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .empty { padding: 32px 16px; text-align: center; color: var(--dim); }
+  #sessionList .t { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sessionList .d { color: var(--dim); font-size: 12px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { padding: 40px 16px; text-align: center; color: var(--dim); }
 
   /* ---- transcript ---- */
-  #transcript { padding: 12px 12px 4px; display: flex; flex-direction: column; gap: 8px; }
-  .bubble { border-radius: 12px; padding: 9px 12px; max-width: 92%; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
-  .bubble.user { background: var(--user); align-self: flex-end; }
-  .bubble.assistant { background: var(--panel); align-self: flex-start; }
+  #transcript { padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px; }
+  .bubble { border-radius: 18px; padding: 10px 14px; max-width: min(92%, 820px);
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+  .bubble.user { background: var(--user); color: var(--user-fg); align-self: flex-end; border-bottom-right-radius: 6px; }
+  .bubble.assistant { background: var(--surface); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 6px; }
   .bubble.dim { opacity: .55; }
-  /* latest prompt stays pinned while the reply scrolls under it; capped so a long prompt can't eat the screen */
-  .bubble.user.sticky { position: sticky; top: 8px; z-index: 1; opacity: 1; max-height: 30vh; overflow-y: auto;
-    /* cartouche: a ring of page background masks the text scrolling behind, then fades out below */
-    box-shadow: 0 0 0 8px var(--bg), 0 10px 18px 8px var(--bg), 0 6px 20px 8px rgba(0, 0, 0, .5); }
+  /* latest prompt, always in view right under the session title; tap to expand */
+  #promptBar {
+    position: relative; z-index: 1; flex-shrink: 0; display: flex; gap: 10px; cursor: pointer;
+    padding: 8px 16px 9px; background: var(--surface); border-bottom: 1px solid var(--border);
+    box-shadow: 0 10px 18px -12px var(--shadow); font-size: 13.5px; line-height: 1.45;
+  }
+  #promptBar::before { content: ''; width: 3px; border-radius: 3px; flex-shrink: 0; background: var(--accent-grad); }
+  #promptBar span { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  #promptBar.open span { display: block; max-height: 40vh; overflow-y: auto; }
 
   /* ---- markdown (assistant bubbles) ---- */
   .bubble.md { white-space: normal; }
-  .bubble.md p { margin: 6px 0; }
+  .bubble.md p { margin: 7px 0; }
   .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4, .bubble.md h5, .bubble.md h6 {
-    margin: 10px 0 4px; line-height: 1.3; font-size: 1em; }
-  .bubble.md h1 { font-size: 1.25em; }
-  .bubble.md h2 { font-size: 1.15em; }
-  .bubble.md h3 { font-size: 1.05em; }
-  .bubble.md ul, .bubble.md ol { margin: 6px 0; padding-left: 22px; }
+    margin: 14px 0 6px; line-height: 1.3; font-size: 1em; letter-spacing: -.01em; }
+  .bubble.md h1 { font-size: 1.3em; }
+  .bubble.md h2 { font-size: 1.17em; }
+  .bubble.md h3 { font-size: 1.06em; }
+  .bubble.md ul, .bubble.md ol { margin: 7px 0; padding-left: 22px; }
   .bubble.md li { margin: 3px 0; }
-  .bubble.md code { background: rgba(110, 118, 129, .25); border-radius: 4px; padding: 1px 5px;
+  .bubble.md li::marker { color: var(--dim); }
+  .bubble.md code { background: var(--code-bg); border-radius: 5px; padding: 1px 5px;
                     font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .bubble.md pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-                   padding: 8px 10px; margin: 6px 0; overflow-x: auto; }
-  .bubble.md pre code { background: none; padding: 0; font-size: 12px; white-space: pre; }
-  .bubble.md blockquote { border-left: 3px solid var(--border); margin: 6px 0; padding: 2px 10px; color: var(--dim); }
-  .bubble.md a { color: var(--accent); }
-  .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
-  .bubble.md table { border-collapse: collapse; margin: 6px 0; font-size: 13px;
+  .bubble.md pre { background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+                   padding: 10px 12px; margin: 8px 0; overflow-x: auto; }
+  .bubble.md pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; white-space: pre; }
+  .bubble.md blockquote { border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+    margin: 8px 0; padding: 2px 12px; color: var(--dim); }
+  .bubble.md a { color: var(--accent); text-underline-offset: 2px; }
+  .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .bubble.md table { border-collapse: collapse; margin: 8px 0; font-size: 13px;
                      display: block; overflow-x: auto; max-width: 100%; }
-  .bubble.md th, .bubble.md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
-  .bubble.md th { background: var(--bg); }
+  .bubble.md th, .bubble.md td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
+  .bubble.md th { background: var(--surface-2); font-weight: 600; }
   .bubble.md > :first-child { margin-top: 0; }
   .bubble.md > :last-child { margin-bottom: 0; }
-  .mermaid-box.rendered { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-                          padding: 8px; margin: 6px 0; overflow-x: auto; text-align: center; }
+  .mermaid-box.rendered { background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+                          padding: 10px; margin: 8px 0; overflow-x: auto; text-align: center; }
   .mermaid-box svg { max-width: 100%; height: auto; }
   .line { color: var(--dim); font-size: 12.5px; padding: 0 4px; word-break: break-word; }
   .line.err { color: var(--red); }
   .line.thinking { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
-  .tool { font-size: 12.5px; color: var(--dim); background: var(--panel); border: 1px solid var(--border);
-          border-radius: 8px; padding: 6px 10px; align-self: flex-start; max-width: 92%; cursor: pointer; }
+  .tool { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: 10px; padding: 6px 10px; align-self: flex-start; max-width: 92%; cursor: pointer; }
   .tool .spin::after { content: "…"; }
-  .tool pre { margin-top: 6px; font-size: 11px; color: var(--fg); overflow-x: auto; max-height: 200px; overflow-y: auto; display: none; }
+  .tool pre { margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--bg); font-size: 11px; color: var(--fg);
+              overflow-x: auto; max-height: 200px; overflow-y: auto; display: none; }
   .tool.open pre { display: block; }
-  .card { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 12px; }
-  .card h4 { font-size: 13px; margin-bottom: 4px; color: var(--accent); }
-  .card p { font-size: 13.5px; margin-bottom: 10px; white-space: pre-wrap; }
+  .card { background: var(--surface); border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+          border-radius: 16px; padding: 14px; box-shadow: 0 6px 20px var(--shadow); }
+  .card h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; color: var(--accent); }
+  .card p { font-size: 13.5px; margin-bottom: 12px; white-space: pre-wrap; }
   .card .opts { display: flex; flex-direction: column; gap: 8px; }
   .card .opts button { text-align: left; }
   .card .opts button small { display: block; color: var(--dim); font-weight: 400; }
-  .card.done { border-color: var(--border); opacity: .6; }
-  .result { font-size: 11.5px; color: var(--dim); text-align: center; padding: 4px 0 8px; }
+  .card .opts button.primary small { color: inherit; opacity: .8; }
+  .card.done { border-color: var(--border); box-shadow: none; opacity: .6; }
+  .result { font-size: 11.5px; color: var(--dim); text-align: center; padding: 2px 0 10px; font-variant-numeric: tabular-nums; }
   /* per-line timestamp, rendered from data-when so streaming innerHTML
      rewrites can't wipe it */
-  [data-when]::after { content: attr(data-when); color: var(--dim); font-size: 10px; margin-left: 6px; }
-  .bubble[data-when]::after, .card[data-when]::after { display: block; text-align: right; margin: 2px 0 0; opacity: .75; }
+  [data-when]::after { content: attr(data-when); color: var(--dim); font-size: 10px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .bubble[data-when]::after, .card[data-when]::after { display: block; text-align: right; margin: 3px 0 0; opacity: .75; }
+  .bubble.user[data-when]::after { color: inherit; opacity: .6; }
 
   /* ---- composer ---- */
   #composer {
     display: none; gap: 8px; align-items: flex-end; flex-shrink: 0;
-    padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px);
-    background: var(--panel); border-top: 1px solid var(--border);
+    padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
+    background: var(--surface); border-top: 1px solid var(--border);
   }
   #composer textarea {
     flex: 1; resize: none; background: var(--bg); color: var(--fg);
-    border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px;
-    font: inherit; max-height: 130px; min-height: 40px;
+    border: 1px solid var(--border); border-radius: 21px; padding: 10px 16px;
+    font: inherit; line-height: 1.4; max-height: 130px; min-height: 42px;
+    transition: border-color .15s, box-shadow .15s;
   }
-  #composer textarea:focus { outline: none; border-color: var(--accent); }
-  #attachBtn { flex-shrink: 0; padding: 8px 10px; font-size: 18px; line-height: 1; }
+  #composer textarea::placeholder { color: var(--dim); }
+  #composer textarea:focus { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  #attachBtn, #sendBtn { width: 42px; height: 42px; border-radius: 50%; }
   #attachments {
     display: none; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
-    padding: 8px 10px 0; background: var(--panel);
+    padding: 10px 12px 0; background: var(--surface);
   }
   .att { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
-  .att img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+  .att img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
   .att.file {
     width: auto; max-width: 150px; display: flex; align-items: center; gap: 6px;
-    padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 0 10px; border: 1px solid var(--border); border-radius: 10px;
     background: var(--bg); font-size: 12px;
   }
   .att.file .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -204,44 +301,45 @@
   .att .x {
     position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
     padding: 0; border-radius: 50%; font-size: 11px; line-height: 1;
-    background: var(--bg); border: 1px solid var(--border);
+    background: var(--surface); border: 1px solid var(--border);
   }
 </style>
 </head>
 <body>
 
 <header>
-  <button id="backBtn" style="display:none" title="Back to the list">‹</button>
-  <div style="flex:1;min-width:0">
+  <button id="backBtn" class="icon" style="display:none" title="Back to the list" aria-label="Back"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <div class="htext">
     <div class="title" id="hTitle">Even Terminal — text input</div>
-    <div class="sub" id="hSub" style="display:none"></div>
-    <select id="instSel"><option>connecting…</option></select>
-    <select id="modelSel" style="display:none" title="Model for the next message">
-      <option value="">🧠 Opus 4.6 · default ▾</option>
-      <option value="claude-fable-5-1">🧠 Fable 5.1 ▾</option>
-      <option value="claude-fable-5">🧠 Fable 5 ▾</option>
-      <option value="claude-opus-5-5">🧠 Opus 5.5 ▾</option>
-      <option value="claude-opus-5">🧠 Opus 5 ▾</option>
-      <option value="claude-sonnet-5">🧠 Sonnet 5 ▾</option>
-      <option value="claude-haiku-4-5-20251001">🧠 Haiku 4.5 ▾</option>
-    </select>
-    <select id="effortSel" style="display:none" title="Reasoning effort for the next message">
-      <option value="">💭 effort · default ▾</option>
-      <option value="low">💭 effort · low ▾</option>
-      <option value="medium">💭 effort · medium ▾</option>
-      <option value="high">💭 effort · high ▾</option>
-      <option value="xhigh">💭 effort · xhigh ▾</option>
-      <option value="max">💭 effort · max ▾</option>
-    </select>
+    <div class="hmeta">
+      <span class="sub" id="hSub" style="display:none"></span>
+      <select id="instSel"><option>connecting…</option></select>
+      <select id="modelSel" style="display:none" title="Model for the next message">
+        <option value="">🧠 Opus 4.6 · default ▾</option>
+        <option value="claude-fable-5-1">🧠 Fable 5.1 ▾</option>
+        <option value="claude-fable-5">🧠 Fable 5 ▾</option>
+        <option value="claude-opus-5-5">🧠 Opus 5.5 ▾</option>
+        <option value="claude-opus-5">🧠 Opus 5 ▾</option>
+        <option value="claude-sonnet-5">🧠 Sonnet 5 ▾</option>
+        <option value="claude-haiku-4-5-20251001">🧠 Haiku 4.5 ▾</option>
+      </select>
+      <select id="effortSel" style="display:none" title="Reasoning effort for the next message">
+        <option value="">💭 effort · default ▾</option>
+        <option value="low">💭 effort · low ▾</option>
+        <option value="medium">💭 effort · medium ▾</option>
+        <option value="high">💭 effort · high ▾</option>
+        <option value="xhigh">💭 effort · xhigh ▾</option>
+        <option value="max">💭 effort · max ▾</option>
+      </select>
+    </div>
   </div>
   <span class="chip" id="statusChip" style="display:none" title="busy · elapsed · ↑output tokens so far — ⚠ silent = no events from even-terminal">idle</span>
-  <button id="scrollBtn" style="display:none" title="Follow new messages (tap to jump to the bottom)">⇣</button>
-  <button id="archBtn" style="display:none" title="Archive this conversation">🗄</button>
-  <button id="stopBtn" style="display:none" title="Interrupt Claude">■</button>
-  <button id="restartBtn" style="display:none" title="Restart even-terminal (when everything is stuck)">🔄</button>
-  <button id="refreshBtn" title="Refresh">↻</button>
-  <button id="newBtn" class="primary" title="New session">＋</button>
+  <button id="scrollBtn" class="icon" style="display:none" title="Follow new messages (tap to jump to the bottom)" aria-label="Follow"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>
+  <button id="stopBtn" class="icon" style="display:none" title="Interrupt Claude" aria-label="Stop"><svg class="ico" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor" stroke="none"/></svg></button>
+  <button id="newBtn" class="icon primary" title="New session" aria-label="New session"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="moreBtn" class="icon" title="More — actions and theme" aria-label="More"><svg class="ico" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
 </header>
+<div id="promptBar" style="display:none" title="Last prompt — tap to expand"><span></span></div>
 
 <main id="main">
   <div id="sessionList"></div>
@@ -251,9 +349,9 @@
 <div id="attachments"></div>
 <div id="composer">
   <input id="fileInput" type="file" accept="image/*,.zip,application/zip,application/x-zip-compressed" multiple hidden>
-  <button id="attachBtn" title="Attach a screenshot or zip">📎</button>
+  <button id="attachBtn" class="icon" title="Attach a screenshot or zip" aria-label="Attach"><svg class="ico" viewBox="0 0 24 24"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
   <textarea id="input" rows="1" placeholder="Message Claude… (Ctrl+Enter to send)"></textarea>
-  <button id="sendBtn" class="primary" title="Send (Ctrl+Enter)">Send</button>
+  <button id="sendBtn" class="icon primary" title="Send (Ctrl+Enter)" aria-label="Send"><svg class="ico" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
 </div>
 
 <script>
@@ -406,11 +504,10 @@ function showList() {
   $('composer').style.display = 'none'
   $('backBtn').style.display = 'none'
   $('scrollBtn').style.display = 'none'
-  $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
-  $('restartBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = ''
+  setPromptBar('')
   setTitle(APP_TITLE)
   $('hTitle').removeAttribute('title')
   $('hSub').style.display = 'none'
@@ -434,11 +531,10 @@ function showSession(id, title) {
   $('composer').style.display = 'flex'
   $('backBtn').style.display = ''
   $('scrollBtn').style.display = ''
-  $('archBtn').style.display = id ? '' : 'none'   // nothing to archive before the session exists
   $('stopBtn').style.display = ''
-  $('restartBtn').style.display = ''
   $('statusChip').style.display = ''
   $('newBtn').style.display = 'none'
+  setPromptBar('')
   setTitle(title || 'New session')
   $('hTitle').title = 'Tap to rename'
   $('instSel').style.display = 'none'
@@ -708,15 +804,14 @@ function showArchived() {
   $('composer').style.display = 'none'
   $('backBtn').style.display = ''
   $('scrollBtn').style.display = 'none'
-  $('archBtn').style.display = 'none'
   $('stopBtn').style.display = 'none'
-  $('restartBtn').style.display = 'none'
   $('statusChip').style.display = 'none'
   $('newBtn').style.display = 'none'
   $('instSel').style.display = 'none'
   $('modelSel').style.display = 'none'
   $('effortSel').style.display = 'none'
   $('hSub').style.display = 'none'
+  setPromptBar('')
   setTitle('Archives')
   $('hTitle').removeAttribute('title')
   setHash('#/archived')
@@ -747,33 +842,55 @@ function renderArchived() {
   }
 }
 
-// Tiny per-row action menu: mark a mislabeled session done, or archive it.
-function rowMenu(anchor, s) {
+// Anchored action menu (row ⋯ and header ⋯). items: [label, fn, {swatch, on}?],
+// '-' for a divider, or { label } for a section heading.
+function popMenu(anchor, items) {
   document.querySelector('.menu')?.remove()
   const m = document.createElement('div')
   m.className = 'menu'
-  const add = (label, fn) => {
+  for (const it of items) {
+    if (it === '-') { m.appendChild(document.createElement('hr')); continue }
+    if (!Array.isArray(it)) {
+      const h = document.createElement('div')
+      h.className = 'lbl'
+      h.textContent = it.label
+      m.appendChild(h)
+      continue
+    }
+    const [label, fn, opt = {}] = it
     const b = document.createElement('button')
     b.textContent = label
+    if (opt.swatch) {
+      const sw = document.createElement('span')
+      sw.className = 'sw'
+      sw.style.background = opt.swatch
+      b.prepend(sw)
+    }
+    if (opt.on) b.classList.add('on')
     b.onclick = (e) => { e.stopPropagation(); m.remove(); fn() }
     m.appendChild(b)
   }
-  if (s.status === 'busy' && effStatus(s) === 'busy') {
-    add('✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() })
-  }
-  add('✏️ Rename', () => {
-    if (renameSession(s.id, s.title, dispTitle(s)) !== null) renderList()
-  })
-  add('🗄 Archive', () => {
-    archived[s.id] = { title: titleMap[s.id] || s.title || null, proj: s._proj || null, ts: s.timestamp || null }
-    saveOverrides(); renderList()
-  })
-  add('🔄 Restart even-terminal', () => doRestart(s._port))
   const r = anchor.getBoundingClientRect()
   m.style.top = `${r.bottom + 4}px`
   m.style.right = `${window.innerWidth - r.right}px`
   document.body.appendChild(m)
   setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }), 0)
+}
+// Per-row actions: mark a mislabeled session done, rename, archive, restart.
+function rowMenu(anchor, s) {
+  const items = []
+  if (s.status === 'busy' && effStatus(s) === 'busy') {
+    items.push(['✓ Mark done', () => { doneMap[s.id] = s.timestamp; saveOverrides(); renderList() }])
+  }
+  items.push(
+    ['✏️ Rename', () => { if (renameSession(s.id, s.title, dispTitle(s)) !== null) renderList() }],
+    ['🗄 Archive', () => {
+      archived[s.id] = { title: titleMap[s.id] || s.title || null, proj: s._proj || null, ts: s.timestamp || null }
+      saveOverrides(); renderList()
+    }],
+    ['🔄 Restart even-terminal', () => doRestart(s._port)],
+  )
+  popMenu(anchor, items)
 }
 
 // Preview the latest line of a busy session, from its on-disk history (cheap,
@@ -934,7 +1051,7 @@ function loadMermaid() {
       const s = document.createElement('script')
       s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'
       s.onload = () => {
-        window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' })
+        window.mermaid.initialize(mermaidConfig())
         resolve(window.mermaid)
       }
       s.onerror = () => reject(new Error('mermaid load failed'))
@@ -942,6 +1059,22 @@ function loadMermaid() {
     })
   }
   return mermaidP
+}
+
+// Diagrams take the current theme's tokens ('base' theme needs hex colors,
+// which every token used here is).
+function mermaidConfig() {
+  return {
+    startOnLoad: false, securityLevel: 'strict', theme: 'base',
+    themeVariables: {
+      darkMode: getComputedStyle(document.documentElement).colorScheme === 'dark',
+      background: cssVar('--bg'), mainBkg: cssVar('--surface-2'), primaryColor: cssVar('--surface-2'),
+      primaryTextColor: cssVar('--fg'), primaryBorderColor: cssVar('--accent'), textColor: cssVar('--fg'),
+      secondaryColor: cssVar('--surface'), tertiaryColor: cssVar('--surface'), lineColor: cssVar('--dim'),
+      clusterBkg: cssVar('--surface'), clusterBorder: cssVar('--border'), edgeLabelBackground: cssVar('--surface'),
+      fontFamily: getComputedStyle(document.body).fontFamily,
+    },
+  }
 }
 
 // svg cache keyed by diagram source: streaming re-renders reset innerHTML on
@@ -1038,15 +1171,18 @@ $('scrollBtn').onclick = () => {
 function scrollDown() {
   if (stick) $('main').scrollTop = $('main').scrollHeight
 }
+function setPromptBar(text) {
+  $('promptBar').querySelector('span').textContent = text || ''
+  $('promptBar').classList.remove('open')
+  $('promptBar').style.display = text && view === 'session' ? '' : 'none'
+}
+$('promptBar').onclick = () => $('promptBar').classList.toggle('open')
 function addEl(el) { $('transcript').appendChild(el); scrollDown(); return el }
 function bubble(cls, text) {
   const b = document.createElement('div')
   b.className = 'bubble ' + cls
   b.textContent = text
-  if (/^user\b/.test(cls)) {
-    $('transcript').querySelectorAll('.sticky').forEach((x) => x.classList.remove('sticky'))
-    b.classList.add('sticky')
-  }
+  if (/^user\b/.test(cls)) setPromptBar(text)
   return addEl(b)
 }
 // Assistant bubble rendered as markdown. _raw keeps the source so streaming
@@ -1187,7 +1323,6 @@ function handle(m) {
       if (!current && m.sessionId) {
         current = m.sessionId
         $('hSub').textContent = current.slice(0, 8)
-        $('archBtn').style.display = ''
         // replaceState: update the URL without retriggering route()
         history.replaceState(null, '', `#/${curPort}/${current}`)
       }
@@ -1360,7 +1495,6 @@ async function send() {
     if (!current && r.sessionId) {
       current = r.sessionId
       $('hSub').textContent = current.slice(0, 8)
-      $('archBtn').style.display = ''
       history.replaceState(null, '', `#/${curPort}/${current}`)
       openStream(current)   // SSE replay will replay user_prompt
     } else if (!es) {
@@ -1386,7 +1520,7 @@ $('input').addEventListener('keydown', (e) => {
 })
 $('backBtn').onclick = showList
 // Tap the title of an open session to rename it (local override).
-$('hTitle').onclick = () => {
+function renameCurrent() {
   if (view !== 'session' || !current) return
   const s = allSessions.find((x) => x.id === current)
   const nt = renameSession(current, s && s.title, $('hTitle').textContent)
@@ -1394,9 +1528,10 @@ $('hTitle').onclick = () => {
   setTitle(nt)
   history.replaceState(null, '', `#/${curPort}/${current}/${slug(nt)}`)
 }
+$('hTitle').onclick = renameCurrent
 // Archive the open conversation and drop back to the list. Metadata comes
 // from the aggregated list when available, else from what the header shows.
-$('archBtn').onclick = () => {
+function archiveCurrent() {
   if (!current) return
   const s = allSessions.find((x) => x.id === current)
   const inst = currentInst()
@@ -1408,7 +1543,7 @@ $('archBtn').onclick = () => {
   saveOverrides()
   showList()
 }
-$('refreshBtn').onclick = () => {
+function refresh() {
   loadInstances()
   if (current) openStream(current)
   else loadOverrides().then(loadSessions)   // pick up changes made on other devices
@@ -1458,7 +1593,50 @@ async function doRestart(port) {
   }
   restarting = false
 }
-$('restartBtn').onclick = () => doRestart(curPort)
+
+// ---------- themes ----------
+// Every color is a CSS token; [data-theme] on <html> picks the set (applied in
+// <head> before first paint). sw = the swatch shown in the menu.
+const THEMES = [
+  { id: 'dark', name: 'Dark', sw: 'linear-gradient(135deg, #0d1117 50%, #4bb7c3 50%)' },
+  { id: 'light', name: 'Light', sw: 'linear-gradient(135deg, #ffffff 50%, #0b7f8a 50%)' },
+  { id: 'night', name: 'Night blue', sw: 'linear-gradient(135deg, #0a0f1f 50%, #7aa2f7 50%)' },
+  { id: 'solarized', name: 'Solarized', sw: 'linear-gradient(135deg, #fdf6e3 50%, #268bd2 50%)' },
+  { id: 'mermaid', name: 'Mermaid', sw: 'linear-gradient(135deg, #5fe0cf, #a99cff 55%, #ff9ecf)' },
+]
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() }
+function setTheme(id) {
+  document.documentElement.dataset.theme = id
+  try { localStorage.setItem('theme', id) } catch { /* private mode: theme just won't persist */ }
+  syncThemeColor()
+  // diagrams are baked SVGs: redraw them in the new palette
+  if (mermaidP) mermaidP.then((m) => {
+    m.initialize(mermaidConfig())
+    mmdCache.clear()
+    document.querySelectorAll('.mermaid-box.rendered').forEach((b) => b.classList.remove('rendered'))
+    renderMermaid(document)
+  }).catch(() => {})
+}
+// mobile browser chrome follows the header color
+function syncThemeColor() { document.querySelector('meta[name=theme-color]').content = cssVar('--surface') }
+syncThemeColor()
+
+// Header ⋯: the view's secondary actions, then the theme picker.
+$('moreBtn').onclick = (e) => {
+  e.stopPropagation()
+  const items = []
+  if (view === 'session') {
+    if (current) items.push(['✏️ Rename', renameCurrent], ['🗄 Archive', archiveCurrent])
+    items.push(['↻ Reconnect', refresh], ['🔄 Restart even-terminal', () => doRestart(curPort)])
+  } else if (view === 'list') {
+    items.push(['↻ Refresh', refresh])
+  }
+  if (items.length) items.push('-')
+  items.push({ label: 'Theme' })
+  const curTheme = document.documentElement.dataset.theme
+  for (const t of THEMES) items.push([t.name, () => setTheme(t.id), { swatch: t.sw, on: curTheme === t.id }])
+  popMenu(e.currentTarget, items)
+}
 
 // ---------- boot ----------
 // Overrides must be in before route(): it decides archived-vs-open by id.
