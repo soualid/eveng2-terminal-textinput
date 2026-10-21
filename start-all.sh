@@ -36,7 +36,15 @@ NODE_BIN="$(command -v node || true)"
 [ -z "$NODE_BIN" ] && { echo "node introuvable" >&2; exit 1; }
 EVEN_BIN="$(command -v even-terminal || true)"
 [ -z "$EVEN_BIN" ] && EVEN_BIN="$(dirname "$NODE_BIN")/even-terminal"
-[ -x "$EVEN_BIN" ] || { echo "even-terminal introuvable ($EVEN_BIN)" >&2; exit 1; }
+# The default node may have moved on (nvm `lts/*` picks up new releases) while
+# the patched even-terminal stays installed under an older version: fall back
+# to the newest nvm version that has it, and run it with that version's node.
+if [ ! -x "$EVEN_BIN" ]; then
+  EVEN_BIN="$(ls -d "$HOME"/.nvm/versions/node/*/bin/even-terminal 2>/dev/null | sort -V | tail -1)"
+  [ -n "$EVEN_BIN" ] && NODE_BIN="$(dirname "$EVEN_BIN")/node"
+fi
+[ -x "$EVEN_BIN" ] || { echo "even-terminal introuvable (aucune version nvm ne l'a installé)" >&2; exit 1; }
+echo "even-terminal : $EVEN_BIN (node $("$NODE_BIN" -v))"
 
 mkdir -p "$LOG_DIR"
 
