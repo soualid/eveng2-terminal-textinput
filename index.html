@@ -283,6 +283,9 @@
   .bubble.md blockquote { border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--border));
     margin: 8px 0; padding: 2px 12px; color: var(--dim); }
   .bubble.md a { color: var(--accent); text-underline-offset: 2px; }
+  .bubble.md img { max-width: min(100%, 520px); max-height: 420px; height: auto; vertical-align: middle;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--bg); cursor: zoom-in; }
+  .bubble.md td img { max-width: 170px; max-height: 300px; }   /* a 4-column table of screenshots still fits */
   .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   .bubble.md table { border-collapse: collapse; margin: 8px 0; font-size: 13px;
                      display: block; overflow-x: auto; max-width: 100%; }
@@ -1062,6 +1065,8 @@ function mdInline(s) {
   const codes = []
   s = String(s).replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`)
   s = esc(s)
+  // images first, or the link rule below would leave a stray "!"; click opens full size
+  s = s.replace(/!\[([^\]\n]*)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener"><img src="$2" alt="$1" loading="lazy"></a>')
   s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
   s = s.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
   s = s.replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>')
