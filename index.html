@@ -150,7 +150,26 @@
   #sessionList .w.quiet { color: var(--amber); }
   #sessionList .w.stale { color: var(--red); }
 
-  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #mainWrap { flex: 1; min-height: 0; position: relative; }
+  main { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+  /* prompt rail: one dot per user message; hover for its first words, click (or Alt+↑/↓) to jump */
+  #rail { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); z-index: 2;
+    max-height: calc(100% - 24px); overflow-y: auto; scrollbar-width: none;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 75%, transparent); box-shadow: inset 0 0 0 1px var(--border);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #rail button { width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%; background: none;
+    display: grid; place-items: center; flex-shrink: 0; }
+  #rail button::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--dim); opacity: .55;
+    transition: transform .15s, background-color .15s, opacity .15s; }
+  #rail button:hover::before { transform: scale(1.5); opacity: 1; background: var(--fg); }
+  #rail button.on::before { transform: scale(1.4); opacity: 1; background: var(--accent); }
+  #mainWrap.has-rail #transcript { padding-right: 34px; }
+  #railTip { position: fixed; z-index: 60; max-width: min(340px, 70vw); padding: 6px 10px; pointer-events: none;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+    box-shadow: 0 8px 22px var(--shadow); font-size: 12.5px; line-height: 1.4; transform: translateY(-50%);
+    overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
   /* ---- global bar ---- */
   .gbar {
@@ -376,10 +395,14 @@
 </header>
 <div id="promptBar" style="display:none" title="Last prompt — tap to expand"><span></span></div>
 
-<main id="main">
-  <div id="sessionList"></div>
-  <div id="transcript" style="display:none"></div>
-</main>
+<div id="mainWrap">
+  <main id="main">
+    <div id="sessionList"></div>
+    <div id="transcript" style="display:none"></div>
+  </main>
+  <nav id="rail" style="display:none" aria-label="Your messages (Alt+↑ / Alt+↓)"></nav>
+</div>
+<div id="railTip" style="display:none"></div>
 
 <div id="attachments"></div>
 <div id="composer">
@@ -559,6 +582,7 @@ function showList() {
   setPromptBar('')
   updateAttention()
   updateFlag()
+  updateRail()
   setTitle(APP_TITLE)
   $('hTitle').removeAttribute('title')
   $('hSub').style.display = 'none'
@@ -598,6 +622,7 @@ function showSession(id, title) {
   setChip('idle')
   curAssistant = null
   thinkingEl = null   // transcript was cleared with innerHTML above
+  resetRail()
   replayCut = 0; seenTs = 0
   toolEls.clear()
   stick = true        // always land at the bottom when joining a session
@@ -878,6 +903,7 @@ function showArchived() {
   setPromptBar('')
   updateAttention()
   updateFlag()
+  updateRail()
   setTitle('Archives')
   $('hTitle').removeAttribute('title')
   setHash('#/archived')
@@ -1250,7 +1276,7 @@ function updateScrollBtn() {
 $('main').addEventListener('scroll', () => {
   const m = $('main')
   stick = m.scrollHeight - m.scrollTop - m.clientHeight < 60
-  if (view === 'session') updateScrollBtn()
+  if (view === 'session') { updateScrollBtn(); markActivePrompt() }
 })
 $('scrollBtn').onclick = () => {
   stick = true
@@ -1260,6 +1286,71 @@ $('scrollBtn').onclick = () => {
 function scrollDown() {
   if (stick) $('main').scrollTop = $('main').scrollHeight
 }
+// ---------- prompt rail ----------
+const promptEls = []   // user bubbles in transcript order, one rail dot each
+const JUMP_PAD = 8     // a jumped-to prompt lands this far below the top edge
+function promptTop(el) { return el.getBoundingClientRect().top - $('main').getBoundingClientRect().top }
+function scrollToPrompt(el, smooth) {
+  const m = $('main')
+  const d = promptTop(el) - JUMP_PAD
+  // long jumps are instant: a smooth scroll across the whole transcript drags on
+  m.scrollTo({ top: m.scrollTop + d, behavior: smooth && Math.abs(d) < 2 * m.clientHeight ? 'smooth' : 'auto' })
+}
+// The prompt whose turn is on screen: the last one at or above the top edge.
+function activePrompt() {
+  let i = -1
+  for (let k = 0; k < promptEls.length && promptTop(promptEls[k]) <= JUMP_PAD + 4; k++) i = k
+  return i
+}
+function jumpPrompt(dir) {
+  const i = activePrompt()
+  // going up from the middle of a turn lands on that turn's prompt first
+  const t = dir > 0 ? i + 1 : (i >= 0 && promptTop(promptEls[i]) < JUMP_PAD - 4 ? i : i - 1)
+  if (promptEls[t]) scrollToPrompt(promptEls[t], false)
+}
+// Highlighted dot: the turn filling the upper part of the screen (at the
+// bottom of a conversation the last prompt never reaches the top edge).
+function markActivePrompt() {
+  const line = $('main').clientHeight * 0.4
+  let i = -1
+  for (let k = 0; k < promptEls.length && promptTop(promptEls[k]) <= line; k++) i = k
+  ;[...$('rail').children].forEach((d, k) => d.classList.toggle('on', k === i))
+}
+function addPromptDot(el, text) {
+  promptEls.push(el)
+  const label = String(text).replace(/\s+/g, ' ').trim()
+  const d = document.createElement('button')
+  d.setAttribute('aria-label', label.slice(0, 140))
+  d.onclick = () => scrollToPrompt(el, true)
+  d.onmouseenter = () => {
+    const r = d.getBoundingClientRect()
+    $('railTip').textContent = label
+    $('railTip').style.top = `${r.top + r.height / 2}px`
+    $('railTip').style.right = `${window.innerWidth - r.left + 6}px`
+    $('railTip').style.display = ''
+  }
+  d.onmouseleave = () => { $('railTip').style.display = 'none' }
+  $('rail').appendChild(d)
+  updateRail()
+}
+function updateRail() {
+  const on = view === 'session' && promptEls.length > 1   // one prompt: nothing to navigate
+  $('rail').style.display = on ? '' : 'none'
+  $('mainWrap').classList.toggle('has-rail', on)
+  if (!on) $('railTip').style.display = 'none'
+  else markActivePrompt()
+}
+function resetRail() {
+  promptEls.length = 0
+  $('rail').innerHTML = ''
+  updateRail()
+}
+document.addEventListener('keydown', (e) => {
+  if (view !== 'session' || !e.altKey || e.ctrlKey || e.metaKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+  e.preventDefault()
+  jumpPrompt(e.key === 'ArrowUp' ? -1 : 1)
+})
+
 function setPromptBar(text) {
   $('promptBar').querySelector('span').textContent = text || ''
   $('promptBar').classList.remove('open')
@@ -1271,7 +1362,7 @@ function bubble(cls, text) {
   const b = document.createElement('div')
   b.className = 'bubble ' + cls
   b.textContent = text
-  if (/^user\b/.test(cls)) setPromptBar(text)
+  if (/^user\b/.test(cls)) { setPromptBar(text); addPromptDot(b, text) }
   return addEl(b)
 }
 // Assistant bubble rendered as markdown. _raw keeps the source so streaming
